@@ -8,6 +8,11 @@
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory
 
+opt = SolverFactory('bonmin', solver_io='nl')   # model → NL file
+opt = SolverFactory('neos')                    # send to NEOS server
+
+results = opt.solve(model, tee=True)
+
 # -----------------------------------------------------------------------------
 # GLOBAL CONSTANTS
 # -----------------------------------------------------------------------------
