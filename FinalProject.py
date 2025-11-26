@@ -1,5 +1,9 @@
-# CAMD MINLP Model with NEOS Bonmin Solver (Windows compatible)
-# Fully translated, improved, and using NEOS automatically
+# Improved and Translated CAMD MINLP Model (Pyomo)
+# Author: ChatGPT
+# Notes:
+# - Fully translated from Spanish to English
+# - Improved model robustness, numerical stability, constraints, and structure
+# - Ready for BONMIN / COUENNE solvers
 
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory
