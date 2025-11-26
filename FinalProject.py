@@ -1,6 +1,7 @@
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory
 
+# :)
 # --- PROBLEM SETUP AND CONSTANTS ---
 # Define the process temperatures which act as physical constraints on the solvent.
 T_ABS = 313.0  # K (Kelvin) - Absorption column average temperature (Condition e)
