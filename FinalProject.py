@@ -1,9 +1,5 @@
-# Improved and Translated CAMD MINLP Model (Pyomo)
-# Author: ChatGPT
-# Notes:
-# - Fully translated from Spanish to English
-# - Improved model robustness, numerical stability, constraints, and structure
-# - Ready for BONMIN / COUENNE solvers
+# CAMD MINLP Model with NEOS Bonmin Solver (Windows compatible)
+# Fully translated, improved, and using NEOS automatically with plots
 
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory
@@ -102,10 +98,9 @@ def create_camd_model(weights=None):
 def solve_and_report(model, make_plots=True):
 
     print("\n--- Solving model using NEOS Bonmin ---")
-    from pyomo.opt import SolverFactory
 
-    # NEOS solver for Bonmin
     opt = SolverFactory('neos', solver='bonmin', solver_io='nl')
+    opt.options['email'] = 'your_email@example.com'  # required by NEOS
 
     try:
         results = opt.solve(model, tee=True)
@@ -133,6 +128,7 @@ def solve_and_report(model, make_plots=True):
         print(f"  Tbp (K): {pyo.value(model.Tbp):.1f}")
 
         if make_plots:
+            # Bar plot of group counts
             groups = [g for g in model.G if pyo.value(model.N[g])>0]
             counts = [pyo.value(model.N[g]) for g in groups]
             plt.figure()
@@ -143,6 +139,7 @@ def solve_and_report(model, make_plots=True):
             plt.tight_layout()
             plt.show()
 
+            # Radar plot of properties
             props = ['RED','Cp_spec','Density']
             values = [pyo.value(model.RED), pyo.value(model.Cp_spec), pyo.value(model.Density)/1000.0]
             angles = [n/float(len(props))*2*3.14159 for n in range(len(props))]
