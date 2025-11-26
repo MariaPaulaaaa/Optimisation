@@ -42,27 +42,27 @@ def create_camd_model(weights=None):
         weights = {'RED': 1/3, 'Cp_spec': 1/3, 'Density': 1/3}
 
     # Sets and Parameters
-    model.G = pyo.Set(initialize=GROUPS, doc='Grupos Funcionales')
+    model.G = pyo.Set(initialize=GROUPS, doc='Functional Groups')
 
-    # Parámetros para la Contribución de Grupos
-    model.MW_GC = pyo.Param(model.G, initialize={k: v[0] for k, v in GROUP_DATA.items()}, doc='Contribución al Peso Molecular [g/mol]')
-    model.VM_GC = pyo.Param(model.G, initialize={k: v[1] for k, v in GROUP_DATA.items()}, doc='Contribución al Volumen Molar [cm^3/mol]')
-    model.U_GC = pyo.Param(model.G, initialize={k: v[2] for k, v in GROUP_DATA.items()}, doc='Contribución a la Energía Interna [J/mol]')
-    model.TM_GC = pyo.Param(model.G, initialize={k: v[3] for k, v in GROUP_DATA.items()}, doc='Contribución a la Temp. de Fusión [K]')
-    model.TBP_GC = pyo.Param(model.G, initialize={k: v[4] for k, v in GROUP_DATA.items()}, doc='Contribución a la Temp. de Ebullición [K]')
-    model.RHO_GC = pyo.Param(model.G, initialize={k: v[5] for k, v in GROUP_DATA.items()}, doc='Contribución a la Densidad [kg/m^3]')
-    model.CP_GC = pyo.Param(model.G, initialize={k: v[6] for k, v in GROUP_DATA.items()}, doc='Contribución a Capacidad Calorífica Molar [J/mol.K]')
-    model.VALENCY_GC = pyo.Param(model.G, initialize={k: v[7] for k, v in GROUP_DATA.items()}, doc='Contribución de Valencias')
+    # GC Parameters
+    model.MW_GC = pyo.Param(model.G, initialize={k: v[0] for k, v in GROUP_DATA.items()}, doc='Contribution to Molecular Weight [g/mol]')
+    model.VM_GC = pyo.Param(model.G, initialize={k: v[1] for k, v in GROUP_DATA.items()}, doc='Contribution Molar Volume [cm^3/mol]')
+    model.U_GC = pyo.Param(model.G, initialize={k: v[2] for k, v in GROUP_DATA.items()}, doc='Contribution to Internal Energy [J/mol]')
+    model.TM_GC = pyo.Param(model.G, initialize={k: v[3] for k, v in GROUP_DATA.items()}, doc='Contribution to Fusion Temperature [K]')
+    model.TBP_GC = pyo.Param(model.G, initialize={k: v[4] for k, v in GROUP_DATA.items()}, doc='Contribution to Boiling Temperature [K]')
+    model.RHO_GC = pyo.Param(model.G, initialize={k: v[5] for k, v in GROUP_DATA.items()}, doc='Contribution to Density [kg/m^3]')
+    model.CP_GC = pyo.Param(model.G, initialize={k: v[6] for k, v in GROUP_DATA.items()}, doc='Contribution to specific Cp [J/mol.K]')
+    model.VALENCY_GC = pyo.Param(model.G, initialize={k: v[7] for k, v in GROUP_DATA.items()}, doc='Contribution to Valencies')
 
-    # Pesos para la Función Objetivo
+    # Function Objective Weights
     model.w_RED = pyo.Param(initialize=weights['RED'], doc='Peso para RED')
     model.w_Cp_spec = pyo.Param(initialize=weights['Cp_spec'], doc='Peso para Cp específico')
     model.w_Density = pyo.Param(initialize=weights['Density'], doc='Peso para Densidad')
 
 
-    # --- VARIABLES ---
-    # N_k: Número de grupos k. Debe ser un entero no negativo.
-    model.N = pyo.Var(model.G, domain=pyo.NonNegativeIntegers, doc='Número de grupos')
+    # Variables
+    # N_k: Number of groups. It must be positive.
+    model.N = pyo.Var(model.G, domain=pyo.NonNegativeIntegers, doc='Number of Groups')
 
     # --- EXPRESIONES DE PROPIEDADES (EXPRESSIONS FOR PROPERTIES) ---
 
