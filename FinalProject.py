@@ -21,38 +21,27 @@ SCALING_RANGES = {
 
 # Group Contribution Data
 # TO BE UPDATED
-#   MW_GC: Contribución al Peso Molecular (g/mol)
-#   Vm_GC: Contribución al Volumen Molar (cm³/mol)
-#   U_GC:  Contribución a la Energía Interna de Vaporización (J/mol) -> (Used for solubility parameter)
-#   Tm_GC: Contribución a la Temperatura de Fusión (K)
-#   Tbp_GC: Contribución a la Temperatura de Ebullición (K)
-#   Rho_GC: Contribución a la Densidad Líquida (kg/m^3)
-# Propiedades estimadas por Rayer et al. [2]:
-#   Cp_GC: Contribución a la Capacidad Calorífica Molar (J/mol.K)
-#   Valency: Valency contribution for structural constraints
-
 GROUP_DATA = {
-    # [MW_GC, Vm_GC, U_GC, Tm_GC, Tbp_GC, Rho_GC, Cp_GC, Valency]
+    # [Molecular Weight (g/mol), Molar Volume (cm3/mol), Internal Energy (J/mol), Fusion Temperature (K)...
+    # Boiling Temperature (K), Liquid Density (kg/m3), Heat Capacity (J/molK), Valency]
+    # Heat Capacity and Valency from Rayer et al.
     'CH3':   [15.035,  33.5,  1200,   5.0,  20.0,  80.0,   45.0, 1],
     'CH2':   [14.027,  16.0,  1000,   3.0,  25.0,  90.0,   30.0, 2],
     'NH2':   [16.023,  18.0,  3500,  -5.0,  30.0,  110.0,  55.0, 1],
     'OH':    [17.008,  15.0,  4000,  10.0,  45.0,  150.0,  60.0, 1],
 }
 
-# Define el conjunto de grupos
+# Groups Set
 GROUPS = list(GROUP_DATA.keys())
 
 def create_camd_model(weights=None):
-    """
-    Crea y retorna el modelo Pyomo Concrete para el problema CAMD (MINLP).
-    """
     model = pyo.ConcreteModel()
 
-    # Pesos por defecto (Task 2: pesos iguales)
+    # Using equal weights
     if weights is None:
         weights = {'RED': 1/3, 'Cp_spec': 1/3, 'Density': 1/3}
 
-    # --- SETS y PARÁMETROS ---
+    # Sets and Parameters
     model.G = pyo.Set(initialize=GROUPS, doc='Grupos Funcionales')
 
     # Parámetros para la Contribución de Grupos
