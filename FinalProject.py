@@ -100,7 +100,7 @@ def solve_and_report(model, make_plots=True):
     print("\n--- Solving model using NEOS Bonmin ---")
 
     opt = SolverFactory('neos', solver='bonmin', solver_io='nl')
-    opt.options['email'] = 'your_email@example.com'  # required by NEOS
+    opt.options['email'] = 'ps2525@ic.ac.uk'  # required by NEOS
 
     try:
         results = opt.solve(model, tee=True)
