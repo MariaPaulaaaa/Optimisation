@@ -1,63 +1,47 @@
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory
 
-# --- CONFIGURACIÓN DEL PROBLEMA (PROBLEM SETUP) ---
-# Temperaturas de la columna (Process Constraints)
-T_ABS = 313.0  # K, Temperatura de absorción
-T_DES = 393.0  # K, Temperatura de desorción
+# Column temperaures
+T_abs = 313.0  # K, Absorption Temperature
+T_des = 393.0  # K, Desorption Temperatura
 
-# Restricciones de diseño (Design Constraints)
-RED_MAX = 1.0  # Relative Energy Difference max (Condición a)
-N_MAX_GROUPS = 15  # Número máximo de grupos totales para mayor tratabilidad
+# Constraints
+RED_MAX = 1.0  # Maximum Relative Energy Difference
+N_MAX_GROUPS = 15  # Total number of groups
 
-# Parámetro de Solubilidad (Solubility Parameter)
-# Valor de referencia para CO2 (aproximado) en MPa^0.5
+# Solubility Parameter (Reference value for CO2 (aprox) in MPa^0.5
 DELTA_CO2 = 13.5
 
-# Rangos de Escalado del Objetivo (Objective Scaling Ranges)
-# P_min y P_max definen el rango sobre el cual la propiedad se escala a [0, 1]
+# Objective Scaling Ranges
 SCALING_RANGES = {
     'RED': {'min': 0.0, 'max': 1.0},
-    'Cp_spec': {'min': 1.5, 'max': 4.0},   # J/g.K (Heat capacity specific)
+    'Cp_spec': {'min': 1.5, 'max': 4.0},   # J/g.K
     'Density': {'min': 700.0, 'max': 1200.0},  # kg/m^3
 }
 
-# --- DATOS DE CONTRIBUCIÓN DE GRUPOS (GROUP CONTRIBUTION DATA) ---
-# ATENCIÓN: Estos valores son REPRESENTATIVOS para demostrar la estructura MINLP.
-# El usuario DEBE reemplazarlos con los valores REALES de las referencias [1] y [2].
-# Propiedades estimadas por Hukkerikar et al. [1]:
-#   MW_GC: Contribución al Peso Molecular (g/mol)
-#   Vm_GC: Contribución al Volumen Molar (cm³/mol)
-#   U_GC:  Contribución a la Energía Interna de Vaporización (J/mol) -> (Used for solubility parameter)
-#   Tm_GC: Contribución a la Temperatura de Fusión (K)
-#   Tbp_GC: Contribución a la Temperatura de Ebullición (K)
-#   Rho_GC: Contribución a la Densidad Líquida (kg/m^3)
-# Propiedades estimadas por Rayer et al. [2]:
-#   Cp_GC: Contribución a la Capacidad Calorífica Molar (J/mol.K)
-#   Valency: Valency contribution for structural constraints
-
+# Group Contribution Data
+# TO BE UPDATED
 GROUP_DATA = {
-    # [MW_GC, Vm_GC, U_GC, Tm_GC, Tbp_GC, Rho_GC, Cp_GC, Valency]
+    # [Molecular Weight (g/mol), Molar Volume (cm3/mol), Internal Energy (J/mol), Fusion Temperature (K)...
+    # Boiling Temperature (K), Liquid Density (kg/m3), Heat Capacity (J/molK), Valency]
+    # Heat Capacity and Valency from Rayer et al.
     'CH3':   [15.035,  33.5,  1200,   5.0,  20.0,  80.0,   45.0, 1],
     'CH2':   [14.027,  16.0,  1000,   3.0,  25.0,  90.0,   30.0, 2],
     'NH2':   [16.023,  18.0,  3500,  -5.0,  30.0,  110.0,  55.0, 1],
     'OH':    [17.008,  15.0,  4000,  10.0,  45.0,  150.0,  60.0, 1],
 }
 
-# Define el conjunto de grupos
+# Groups Set
 GROUPS = list(GROUP_DATA.keys())
 
 def create_camd_model(weights=None):
-    """
-    Crea y retorna el modelo Pyomo Concrete para el problema CAMD (MINLP).
-    """
     model = pyo.ConcreteModel()
 
-    # Pesos por defecto (Task 2: pesos iguales)
+    # Using equal weights
     if weights is None:
         weights = {'RED': 1/3, 'Cp_spec': 1/3, 'Density': 1/3}
 
-    # --- SETS y PARÁMETROS ---
+    # Sets and Parameters
     model.G = pyo.Set(initialize=GROUPS, doc='Grupos Funcionales')
 
     # Parámetros para la Contribución de Grupos
@@ -131,10 +115,10 @@ def create_camd_model(weights=None):
     model.C4a_RED = pyo.Constraint(expr=model.RED <= RED_MAX)
 
     # C4.e: Melting Temperature constraint (Condition e)
-    model.C4e_Tm = pyo.Constraint(expr=model.Tm <= T_ABS)
+    model.C4e_Tm = pyo.Constraint(expr=model.Tm <= T_abs)
 
     # C4.f: Boiling Temperature constraint (Condition f)
-    model.C4f_Tbp = pyo.Constraint(expr=model.Tbp >= T_DES)
+    model.C4f_Tbp = pyo.Constraint(expr=model.Tbp >= T_des)
 
 
     # --- Scaled Weighted Sum ---
@@ -207,8 +191,8 @@ def solve_and_report(model):
         print(f"  RED: {pyo.value(model.RED):.4f} (Restricción: <= {RED_MAX:.1f})")
         print(f"  Cp Específico (J/g.K): {pyo.value(model.Cp_spec):.3f}")
         print(f"  Densidad (kg/m^3): {pyo.value(model.Density):.1f}")
-        print(f"  Tm (K): {pyo.value(model.Tm):.1f} (Restricción: <= {T_ABS:.1f} K)")
-        print(f"  Tbp (K): {pyo.value(model.Tbp):.1f} (Restricción: >= {T_DES:.1f} K)")
+        print(f"  Tm (K): {pyo.value(model.Tm):.1f} (Restricción: <= {T_abs:.1f} K)")
+        print(f"  Tbp (K): {pyo.value(model.Tbp):.1f} (Restricción: >= {T_des:.1f} K)")
 
     else:
         print("\n--- SOLUCIÓN NO ENCONTRADA ---")
