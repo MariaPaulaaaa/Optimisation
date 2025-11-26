@@ -158,9 +158,9 @@ def create_camd_model(weights=None):
     return model
 
 # -----------------------------------------------------------------------------
-# SOLVER ROUTINE
+# SOLVER ROUTINE WITH OPTIONAL PLOTTING
 # -----------------------------------------------------------------------------
-def solve_and_report(model):
+def solve_and_report(model, make_plots=False):
 
     opt = SolverFactory('bonmin')
     print("\n--- Solving CAMD MINLP Model ---\n")
@@ -170,6 +170,74 @@ def solve_and_report(model):
     except Exception as e:
         print(f"Solver failed: {e}")
         return
+
+    # --- Extract solution ---
+    solved = (
+        results.solver.status == pyo.SolverStatus.ok and
+        results.solver.termination_condition in
+        [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible]
+    )
+
+    if solved:
+        print("\n--- Optimal Solvent Candidate Found ---\n")
+        print(f"Objective Value: {pyo.value(model.Objective):.4f}")
+        print(f"Total Groups: {pyo.value(model.N_total):.0f}\n")
+
+        for g in model.G:
+            if pyo.value(model.N[g]) > 0:
+                print(f"  {g}: {pyo.value(model.N[g]):.0f}")
+
+        print("\nEstimated Properties:")
+        print(f"  Molecular Weight (g/mol): {pyo.value(model.MW):.2f}")
+        print(f"  Delta (MPa^0.5): {pyo.value(model.Delta):.2f}")
+        print(f"  RED: {pyo.value(model.RED):.4f}")
+        print(f"  Cp_spec (J/g.K): {pyo.value(model.Cp_spec):.3f}")
+        print(f"  Density (kg/m^3): {pyo.value(model.Density):.1f}")
+        print(f"  Tm (K): {pyo.value(model.Tm):.1f}")
+        print(f"  Tbp (K): {pyo.value(model.Tbp):.1f}")
+
+        # ---------------------------------------------------------
+        # OPTIONAL PLOTS
+        # ---------------------------------------------------------
+        if make_plots:
+            import matplotlib.pyplot as plt
+
+            # Bar chart of functional group distribution
+            groups = [g for g in model.G if pyo.value(model.N[g]) > 0]
+            counts = [pyo.value(model.N[g]) for g in groups]
+
+            plt.figure()
+            plt.bar(groups, counts)
+            plt.title('Functional Group Distribution in Optimal Molecule')
+            plt.ylabel('Count')
+            plt.xlabel('Group')
+            plt.tight_layout()
+            plt.show()
+
+            # Property radar chart to visualize properties
+            props = ['RED', 'Cp_spec', 'Density']
+            values = [
+                pyo.value(model.RED),
+                pyo.value(model.Cp_spec),
+                pyo.value(model.Density)/1000.0  # scale density
+            ]
+
+            angles = [n/float(len(props))*2*3.14159 for n in range(len(props))]
+            values += values[:1]
+            angles += angles[:1]
+
+            plt.figure()
+            plt.polar(angles, values)
+            plt.fill(angles, values, alpha=0.3)
+            plt.title('Normalized Properties of the Candidate')
+            plt.xticks(angles[:-1], props)
+            plt.tight_layout()
+            plt.show()
+    else:
+        print("\n--- No Solution Found ---")
+        print(f"Status: {results.solver.status}")
+        print(f"Termination: {results.solver.termination_condition}")
+    return
 
     if (results.solver.status == pyo.SolverStatus.ok and
         results.solver.termination_condition in
