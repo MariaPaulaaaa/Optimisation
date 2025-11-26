@@ -102,7 +102,10 @@ def create_camd_model(weights=None):
 def solve_and_report(model, make_plots=True):
 
     print("\n--- Solving model using NEOS Bonmin ---")
-    opt = SolverFactory("neos")  # NEOS automatically uses Bonmin
+    from pyomo.opt import SolverFactory
+
+    # NEOS solver for Bonmin
+    opt = SolverFactory('neos', solver='bonmin', solver_io='nl')
 
     try:
         results = opt.solve(model, tee=True)
