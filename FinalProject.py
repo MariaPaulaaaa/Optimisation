@@ -1,167 +1,110 @@
-# FINAL WORKING CAMD MODEL (Local MindtPy)
-# Fixes:
-# 1. Corrected the Valency Constraint (The root cause of "Infeasible")
-# 2. Adjusted MindtPy strategy to 'FP' (Feasibility Pump)
+# ROBUST CAMD MODEL (Soft Constraints)
+# Strategy: Hard constraints for Phase (Liquid), Soft objective for Solubility.
 
 import pyomo.environ as pyo
-from pyomo.opt import SolverFactory
-import matplotlib.pyplot as plt
+from pyomo.opt import SolverFactory, TerminationCondition
 
 # ==========================================
-# 1. CONSTANTS & DATA
+# 1. CONSTANTS & TARGETS
 # ==========================================
-T_ABS = 313.0   
-T_DES = 393.0   
+T_M_MAX = 313.0   # Hard Constraint: Max Melting Point (K)
+T_B_MIN = 393.0   # Hard Constraint: Min Boiling Point (K)
+DELTA_CO2 = 21.0  # Target Solubility Parameter (MPa^0.5)
 
-DELTA_CO2 = 13.5
-RED_MAX = 3.0           
-N_MAX_GROUPS = 15       
-
-# Expanded ranges to ensure solver finds a solution
-SCALING_RANGES = {
-    'RED': {'min': 0.0, 'max': 5.0},
-    'Cp_spec': {'min': 0.5, 'max': 6.0},
-    'Density': {'min': 500.0, 'max': 1500.0}
-}
-
+# ==========================================
+# 2. DATA (Expanded for more options)
+# ==========================================
+# Columns: [MW,  Vm,    U,      Tm_param, Tb_param, Valency]
 GROUP_DATA = {
-    # Key: [MW, Vm, U, Tm, Tbp, Rho, Cp_m, Valency]
-    'CH3': [15.035, 33.5, 1200,   5.0,  20.0,  80.0, 45.0, 1],
-    'CH2': [14.027, 16.0, 1000,   3.0,  25.0,  90.0, 30.0, 2],
-    'NH2': [16.023, 18.0, 3500,  -5.0,  30.0, 110.0, 55.0, 1],
-    'OH':  [17.008, 15.0, 4000,  10.0,  45.0, 150.0, 60.0, 1]
+    'CH3':           [15.03, 33.5,  4710,   -5.10,  23.58, 1],
+    'CH2':           [14.03, 16.1,  4940,   11.27,  22.88, 2],
+    'NH2 (primary)': [16.02, 19.2,  12550,  66.89,  73.23, 1], 
+    'NH (sec)':      [15.02, 4.5,   8370,   52.66,  50.17, 2], # Added for DEA
+    'OH (alcohol)':  [17.01, 10.0,  29800,  44.45,  92.88, 1]
 }
 GROUPS = list(GROUP_DATA.keys())
 
-# ==========================================
-# 2. MODEL DEFINITION
-# ==========================================
-def create_camd_model(weights=None):
-    model = pyo.ConcreteModel()
-    if weights is None: weights = {'RED': 0.4, 'Cp_spec': 0.3, 'Density': 0.3}
+def create_robust_model():
+    m = pyo.ConcreteModel()
+    m.G = pyo.Set(initialize=GROUPS)
 
-    model.G = pyo.Set(initialize=GROUPS)
+    # Variables (Allow up to 10 groups)
+    m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 10))
+
+    # --- EXPRESSIONS ---
     
-    # Parameters
-    model.MW_GC = pyo.Param(model.G, initialize={k: v[0] for k, v in GROUP_DATA.items()})
-    model.VM_GC = pyo.Param(model.G, initialize={k: v[1] for k, v in GROUP_DATA.items()})
-    model.U_GC  = pyo.Param(model.G, initialize={k: v[2] for k, v in GROUP_DATA.items()})
-    model.TM_GC = pyo.Param(model.G, initialize={k: v[3] for k, v in GROUP_DATA.items()})
-    model.TBP_GC= pyo.Param(model.G, initialize={k: v[4] for k, v in GROUP_DATA.items()})
-    model.RHO_GC= pyo.Param(model.G, initialize={k: v[5] for k, v in GROUP_DATA.items()})
-    model.CP_GC = pyo.Param(model.G, initialize={k: v[6] for k, v in GROUP_DATA.items()})
-    model.VAL_GC= pyo.Param(model.G, initialize={k: v[7] for k, v in GROUP_DATA.items()})
+    # Joback Melting/Boiling
+    m.Tm = pyo.Expression(expr=122.5 + sum(m.n[g] * GROUP_DATA[g][3] for g in m.G))
+    m.Tb = pyo.Expression(expr=198.2 + sum(m.n[g] * GROUP_DATA[g][4] for g in m.G))
 
-    model.w_RED = pyo.Param(initialize=weights['RED'])
-    model.w_Cp  = pyo.Param(initialize=weights['Cp_spec'])
-    model.w_Rho = pyo.Param(initialize=weights['Density'])
-
-    # Variables (Relaxed bounds)
-    model.N = pyo.Var(model.G, domain=pyo.NonNegativeIntegers, initialize=1, bounds=(0, 10))
-    model.Delta = pyo.Var(domain=pyo.NonNegativeReals, initialize=15.0, bounds=(1, 50))
-    model.RED = pyo.Var(domain=pyo.NonNegativeReals, initialize=1.0, bounds=(0, 10))
-
-    # Expressions
-    model.MW = pyo.Expression(expr=sum(model.N[g]*model.MW_GC[g] for g in model.G))
-    model.Vm = pyo.Expression(expr=sum(model.N[g]*model.VM_GC[g] for g in model.G))
-    model.U  = pyo.Expression(expr=sum(model.N[g]*model.U_GC[g] for g in model.G))
-    model.Tm = pyo.Expression(expr=sum(model.N[g]*model.TM_GC[g] for g in model.G))
-    model.Tbp= pyo.Expression(expr=sum(model.N[g]*model.TBP_GC[g] for g in model.G))
-    model.Density = pyo.Expression(expr=sum(model.N[g]*model.RHO_GC[g] for g in model.G))
-    model.Cp_molar= pyo.Expression(expr=sum(model.N[g]*model.CP_GC[g] for g in model.G))
-    model.N_total = pyo.Expression(expr=sum(model.N[g] for g in model.G))
-
-    # Nonlinear Properties
-    model.Cp_spec = pyo.Expression(expr=model.Cp_molar / (model.MW + 1e-6))
+    # Fedors Solubility (Squared)
+    m.U_total = sum(m.n[g] * GROUP_DATA[g][2] for g in m.G)
+    m.V_total = sum(m.n[g] * GROUP_DATA[g][1] for g in m.G)
     
-    # --- CONSTRAINTS ---
+    # Delta^2 = U / V
+    m.Delta_sq = pyo.Expression(expr=m.U_total / (m.V_total + 1e-6))
 
-    # 1. Solubility (Standard Definition)
-    # Vm is in cm3/mol, U is J/mol. Factor 1e-6 converts cm3 to m3 for SI consistency in some correlations, 
-    # but here we stick to standard Hildebrand units (MPa^0.5).
-    # Delta^2 = (U / Vm) * 1000 (To get MPa from J/cm3) -> 1 J/cm3 = 1 MPa.
-    # So Delta = sqrt(U/Vm). 
-    model.C_delta_def = pyo.Constraint(expr=model.Delta**2 * (model.Vm + 1e-6) == model.U)
+    # --- HARD CONSTRAINTS (Must be met) ---
 
-    # 2. RED Definition (Smooth)
-    model.C_red_def = pyo.Constraint(expr=(model.RED * DELTA_CO2)**2 == (model.Delta - DELTA_CO2)**2)
+    # 1. Phase Constraints
+    m.C_Melting = pyo.Constraint(expr=m.Tm <= T_M_MAX)
+    m.C_Boiling = pyo.Constraint(expr=m.Tb >= T_B_MIN)
 
-    # 3. Structural Constraints
-    model.C_total_max = pyo.Constraint(expr=model.N_total <= N_MAX_GROUPS)
-    model.C_total_min = pyo.Constraint(expr=model.N_total >= 2)
-    model.C_amine = pyo.Constraint(expr=model.N['NH2'] >= 1)
-    
-    # 4. Process Constraints
-    model.C_RED = pyo.Constraint(expr=model.RED <= RED_MAX)
-    
-    # 5. CORRECTED VALENCY CONSTRAINT (The Acyclic Rule)
-    # Sum( Ni * (2 - Vi) ) == 2
-    model.C_valency = pyo.Constraint(
-        expr=sum(model.N[g] * (2 - model.VAL_GC[g]) for g in model.G) == 2
+    # 2. Chemical Structure (Octet Rule)
+    # Sum(Ni * (2-Vi)) == 2
+    m.C_Structure = pyo.Constraint(
+        expr=sum(m.n[g] * (2 - GROUP_DATA[g][5]) for g in m.G) == 2
     )
 
-    # Objective
-    Z_RED = (model.RED - SCALING_RANGES['RED']['min']) / (SCALING_RANGES['RED']['max'] - SCALING_RANGES['RED']['min'])
-    Z_Cp  = (model.Cp_spec - SCALING_RANGES['Cp_spec']['min']) / (SCALING_RANGES['Cp_spec']['max'] - SCALING_RANGES['Cp_spec']['min'])
-    Z_Rho = (SCALING_RANGES['Density']['max'] - model.Density) / (SCALING_RANGES['Density']['max'] - SCALING_RANGES['Density']['min'])
+    # 3. Must be an Amine (Capture Agent)
+    m.C_Amine = pyo.Constraint(
+        expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1
+    )
 
-    model.Objective = pyo.Objective(expr=model.w_RED*Z_RED + model.w_Cp*Z_Cp + model.w_Rho*Z_Rho, sense=pyo.minimize)
-
-    return model
-
-# ==========================================
-# 3. LOCAL SOLVER ROUTINE
-# ==========================================
-def solve_locally(model, make_plots=True):
-    print("\n--- Solving with Local MindtPy (GLPK + IPOPT) ---")
+    # --- OBJECTIVE FUNCTION (Soft Targets) ---
+    # Goal: Minimise difference from Target Solubility + Minimal Weight
+    # We square the difference to make it positive
     
+    m.Solubility_Diff = (m.Delta_sq - DELTA_CO2**2)**2
+    m.MW = sum(m.n[g] * GROUP_DATA[g][0] for g in m.G)
+
+    # Weights: Prioritize Solubility (1.0), break ties with MW (0.01)
+    m.obj = pyo.Objective(expr= 1.0 * m.Solubility_Diff + 0.01 * m.MW, sense=pyo.minimize)
+
+    return m
+
+def solve():
+    print("\n--- Solving Robust CAMD Model ---")
+    model = create_robust_model()
     opt = SolverFactory('mindtpy')
     
     try:
-        # Changed strategy to 'FP' (Feasibility Pump) - often better for finding initial integer solutions
-        results = opt.solve(model, 
-                            mip_solver='glpk', 
-                            nlp_solver='ipopt', 
-                            strategy='OA', # OA is standard, but if it fails again, try 'FP'
-                            init_strategy='FP', # Use Feasibility Pump to find starting point
-                            tee=True)
+        # Using Feasibility Pump (FP) to find valid integers first
+        res = opt.solve(model, mip_solver='glpk', nlp_solver='ipopt', 
+                        strategy='OA', init_strategy='FP', tee=True)
     except Exception as e:
         print(f"Solver Error: {e}")
         return
 
-    if (results.solver.status == pyo.SolverStatus.ok and 
-        results.solver.termination_condition in [pyo.TerminationCondition.optimal, pyo.TerminationCondition.feasible]):
+    if res.solver.termination_condition in [TerminationCondition.optimal, TerminationCondition.feasible]:
+        print("\n--- SUCCESS: Molecule Found! ---")
         
-        print("\n--- Optimal Solvent Candidate Found ---\n")
-        print(f"Objective Value: {pyo.value(model.Objective):.4f}")
+        tm = pyo.value(model.Tm)
+        tb = pyo.value(model.Tb)
+        delta = pyo.value(model.Delta_sq)**0.5
         
-        print("Molecular Structure:")
+        print("\nStructure:")
         for g in model.G:
-            c = pyo.value(model.N[g])
+            c = pyo.value(model.n[g])
             if c > 0.1:
                 print(f"  {g}: {int(round(c))}")
-
-        print("\nEstimated Properties:")
-        print(f"  RED: {pyo.value(model.RED):.4f}")
-        print(f"  Delta: {pyo.value(model.Delta):.2f}")
-        print(f"  Cp_spec: {pyo.value(model.Cp_spec):.3f}")
-        print(f"  Density: {pyo.value(model.Density):.1f}")
         
-        if make_plots:
-            groups = [g for g in model.G if pyo.value(model.N[g])>0.1]
-            counts = [pyo.value(model.N[g]) for g in groups]
-            plt.figure(figsize=(6,4))
-            plt.bar(groups, counts, color='teal')
-            plt.title('Optimal Molecule')
-            plt.show()
+        print(f"\nProperties:")
+        print(f"  Melting Point: {tm:.1f} K (<= {T_M_MAX})")
+        print(f"  Boiling Point: {tb:.1f} K (>= {T_B_MIN})")
+        print(f"  Solubility:    {delta:.1f} MPa^0.5 (Target {DELTA_CO2})")
     else:
-        print("\n--- No Solution Found ---")
-        print(f"Status: {results.solver.status}")
-        print(f"Termination: {results.solver.termination_condition}")
+        print("Infeasible: No molecule exists with these Phase constraints.")
 
-# ==========================================
-# 4. MAIN
-# ==========================================
 if __name__ == "__main__":
-    m = create_camd_model()
-    solve_locally(m, make_plots=True)
+    solve()
