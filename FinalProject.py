@@ -1,5 +1,4 @@
 # Improved and Translated CAMD MINLP Model (Pyomo)
-# Author: ChatGPT
 # Notes:
 # - Fully translated from Spanish to English
 # - Improved model robustness, numerical stability, constraints, and structure
