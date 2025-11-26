@@ -3,15 +3,14 @@ from pyomo.opt import SolverFactory, TerminationCondition
 import matplotlib.pyplot as plt
 import numpy as np
 
-# --- CONSTANTS ---
-T_M_MAX = 313.0  # Maximum Melting Point (K) - Condition (e)
-T_B_MIN = 393.0  # Minimum Boiling Point (K) - Condition (f)
+# Constants
+T_M_MAX = 313.0  # Maximum Melting Point (K)
+T_B_MIN = 393.0  # Minimum Boiling Point (K)
 DELTA_CO2 = 21.0  # Target Solubility Parameter (MPa^0.5)
 
-# --- GROUP CONTRIBUTION DATA (Placeholders for Joback/Fedors Type Models) ---
-# NOTE: This data is for the simplified model structure provided by the user (MINLP).
-# It does NOT use the Hukkerikar/Rayer models required by the project brief.
-#                   [MW, Vm (cm3/mol), U (J/mol), Tm_param, Tb_param, Valency]
+# Group Contribution Data
+# NOTE: TO BE UPDATED
+#                    [MW, Vm (cm3/mol), U (J/mol), Tm_param, Tb_param, Valency]
 GROUP_DATA = {
     'CH3':           [15.03, 33.5,   4710,   -5.10,  23.58, 1],
     'CH2':           [14.03, 16.1,   4940,   11.27,  22.88, 2],
@@ -22,10 +21,9 @@ GROUP_DATA = {
 GROUPS = list(GROUP_DATA.keys())
 
 def create_robust_model():
-    """
-    Creates the MINLP (Mixed-Integer Nonlinear Program) model for the CAMD design.
-    This model uses a non-linear Fedors solubility approximation.
-    """
+    # Creates the MINLP (Mixed-Integer Nonlinear Program) model for the CAMD design.
+    # This model uses a non-linear Fedors solubility approximation.
+    
     m = pyo.ConcreteModel()
     m.G = pyo.Set(initialize=GROUPS)
 
@@ -33,7 +31,8 @@ def create_robust_model():
     m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 10), doc='Number of groups')
 
     # --- PROPERTY EXPRESSIONS (Group Contribution) ---
-    
+    # NOTE: I think these should be updated to the ones on the papers (not sure, maybe ask AI)
+
     # Joback Melting/Boiling (Linear)
     m.Tm = pyo.Expression(expr=122.5 + sum(m.n[g] * GROUP_DATA[g][3] for g in m.G), doc='Melting Temperature (K)')
     m.Tb = pyo.Expression(expr=198.2 + sum(m.n[g] * GROUP_DATA[g][4] for g in m.G), doc='Boiling Temperature (K)')
@@ -45,9 +44,9 @@ def create_robust_model():
     # Delta^2 = U / V. 1e-6 is added to prevent division by zero if V_total is 0.
     m.Delta_sq = pyo.Expression(expr=m.U_total / (m.V_total + 1e-6), doc='Solubility Parameter Squared')
 
-    # --- CONSTRAINTS ---
+    # Constraints
 
-    # 1. Phase Constraints (Operational)
+    # 1. Phase Constraints
     m.C_Melting = pyo.Constraint(expr=m.Tm <= T_M_MAX, doc=f'Tm < {T_M_MAX} K (Absorber)')
     m.C_Boiling = pyo.Constraint(expr=m.Tb >= T_B_MIN, doc=f'Tb > {T_B_MIN} K (Desorber)')
 
@@ -64,9 +63,9 @@ def create_robust_model():
         doc='Requires at least one amine group'
     )
 
-    # --- OBJECTIVE FUNCTION ---
-    # Objective: Minimize the squared difference from the target CO2 solubility,
-    # and minimize the molecular weight as a tie-breaker.
+    # Objective Function
+    # Minimizing the squared difference from the target CO2 solubility, and using the molecular
+    # weight as a tie-breaker.
     
     m.Solubility_Diff = (m.Delta_sq - DELTA_CO2**2)**2
     m.MW = sum(m.n[g] * GROUP_DATA[g][0] for g in m.G)
@@ -77,9 +76,9 @@ def create_robust_model():
     return m
 
 def plot_solver_progress(history, termination_condition):
-    """
-    Generates a plot simulating the convergence of the objective function value.
-    """
+
+    # Ploting to simulate the convergence of the objective function value.
+    
     if not history:
         print("No objective history to plot.")
         return
@@ -119,7 +118,7 @@ def solve():
         print(f"Solver Error: {e}")
         return
 
-    # --- RESULTS PROCESSING AND REPORTING ---
+    # Results
     
     termination_condition = res.solver.termination_condition
     
