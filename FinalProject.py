@@ -1,20 +1,13 @@
-# ROBUST CAMD MODEL (Soft Constraints)
-# Strategy: Hard constraints for Phase (Liquid), Soft objective for Solubility.
-
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory, TerminationCondition
 
-# ==========================================
-# 1. CONSTANTS & TARGETS
-# ==========================================
-T_M_MAX = 313.0   # Hard Constraint: Max Melting Point (K)
-T_B_MIN = 393.0   # Hard Constraint: Min Boiling Point (K)
+# Constants
+T_M_MAX = 313.0   # Maximum Melting Point (K)
+T_B_MIN = 393.0   # Minimum Boiling Point (K)
 DELTA_CO2 = 21.0  # Target Solubility Parameter (MPa^0.5)
 
-# ==========================================
-# 2. DATA (Expanded for more options)
-# ==========================================
-# Columns: [MW,  Vm,    U,      Tm_param, Tb_param, Valency]
+# Group Contribution Data from papers 
+#                    [MW, Vm, U, Tm_param, Tb_param, Valency]
 GROUP_DATA = {
     'CH3':           [15.03, 33.5,  4710,   -5.10,  23.58, 1],
     'CH2':           [14.03, 16.1,  4940,   11.27,  22.88, 2],
@@ -28,10 +21,10 @@ def create_robust_model():
     m = pyo.ConcreteModel()
     m.G = pyo.Set(initialize=GROUPS)
 
-    # Variables (Allow up to 10 groups)
+    # Variables (up to 10 groups)
     m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 10))
 
-    # --- EXPRESSIONS ---
+    # Expressions
     
     # Joback Melting/Boiling
     m.Tm = pyo.Expression(expr=122.5 + sum(m.n[g] * GROUP_DATA[g][3] for g in m.G))
@@ -44,7 +37,7 @@ def create_robust_model():
     # Delta^2 = U / V
     m.Delta_sq = pyo.Expression(expr=m.U_total / (m.V_total + 1e-6))
 
-    # --- HARD CONSTRAINTS (Must be met) ---
+    # Constraints
 
     # 1. Phase Constraints
     m.C_Melting = pyo.Constraint(expr=m.Tm <= T_M_MAX)
@@ -61,9 +54,9 @@ def create_robust_model():
         expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1
     )
 
-    # --- OBJECTIVE FUNCTION (Soft Targets) ---
-    # Goal: Minimise difference from Target Solubility + Minimal Weight
-    # We square the difference to make it positive
+    # Objective Function
+    # Minimising the difference from Target Solubility + Minimal Weight
+    # The difference is squared to make it positive
     
     m.Solubility_Diff = (m.Delta_sq - DELTA_CO2**2)**2
     m.MW = sum(m.n[g] * GROUP_DATA[g][0] for g in m.G)
