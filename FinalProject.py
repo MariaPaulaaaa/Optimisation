@@ -97,7 +97,7 @@ def create_camd_model(weights=None):
     model.Cp_spec = pyo.Expression(expr=model.Cp_molar / model.MW, doc='Capacidad Calorífica Específica [J/g.K]')
 
 
-    # --- RESTRICCIONES (CONSTRAINTS) ---
+    # --- CONSTRAINTS ---
 
     # C1: Restricción del número total de grupos
     model.C1_TotalGroups = pyo.Constraint(expr=model.N_total <= N_MAX_GROUPS)
@@ -121,17 +121,17 @@ def create_camd_model(weights=None):
     model.C4f_Tbp = pyo.Constraint(expr=model.Tbp >= T_des)
 
 
-    # --- FUNCIÓN OBJETIVO (Scaled Weighted Sum) ---
+    # --- Scaled Weighted Sum ---
     # Calcular los objetivos escalados (normalizados) Z_i
     # RED (Minimizar)
     Z_RED = (model.RED - SCALING_RANGES['RED']['min']) / \
             (SCALING_RANGES['RED']['max'] - SCALING_RANGES['RED']['min'])
 
-    # Cp_spec (Minimizar)
+    # Cp_spec (To minimise)
     Z_Cp_spec = (model.Cp_spec - SCALING_RANGES['Cp_spec']['min']) / \
            (SCALING_RANGES['Cp_spec']['max'] - SCALING_RANGES['Cp_spec']['min'])
 
-    # Density (Maximizar -> Minimizar (Max - P))
+    # Density (To maximise -> Minimise (Max - P))
     Z_Density = (SCALING_RANGES['Density']['max'] - model.Density) / \
                 (SCALING_RANGES['Density']['max'] - SCALING_RANGES['Density']['min'])
 
