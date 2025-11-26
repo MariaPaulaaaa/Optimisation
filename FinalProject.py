@@ -137,7 +137,7 @@ def create_camd_model(weights=None):
     model.C4f_Tbp = pyo.Constraint(expr=model.Tbp >= T_DES)
 
 
-    # --- FUNCIÓN OBJETIVO (Scaled Weighted Sum) ---
+    # --- Scaled Weighted Sum ---
     # Calcular los objetivos escalados (normalizados) Z_i
     # RED (Minimizar)
     Z_RED = (model.RED - SCALING_RANGES['RED']['min']) / \
