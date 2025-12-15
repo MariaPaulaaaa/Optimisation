@@ -104,7 +104,7 @@ def create_scientific_model():
     return m
 
 def solve_scientific():
-    print("\n--- Starting Scientific CAMD Solver ---")
+    print("\n--- Starting Scientific CAMD Solver via GAMS ---")
     
     # Safety check for empty data
     if GROUP_DATA['CH3'][1] == 0.0:
@@ -113,15 +113,18 @@ def solve_scientific():
         return
 
     model = create_scientific_model()
-    # Using 'mindtpy' for Mixed-Integer Nonlinear Programming
-    opt = SolverFactory('mindtpy')
     
+    # CAMBIO IMPORTANTE: Usar la interfaz de GAMS
+    # Asegúrate de tener GAMS instalado y en tu PATH del sistema.
     try:
-        # Note: 'oa' strategy needs 'glpk' (MIP) and 'ipopt' (NLP) installed.
-        res = opt.solve(model, mip_solver='glpk', nlp_solver='ipopt', tee=True)
+        opt = SolverFactory('gams')
+        
+        # 'dicopt' es un solver excelente para MINLP (Outer Approximation) incluido en GAMS
+        # Si tienes licencia para 'baron', puedes cambiar 'dicopt' por 'baron'.
+        res = opt.solve(model, solver='dicopt', tee=True)
         
         if res.solver.termination_condition in [TerminationCondition.optimal, TerminationCondition.feasible]:
-            print("\n--- OPTIMAL MOLECULE FOUND! ---")
+            print("\n--- OPTIMAL MOLECULE FOUND VIA GAMS! ---")
             print("Structure:")
             for g in model.G:
                 val = pyo.value(model.n[g])
@@ -135,13 +138,13 @@ def solve_scientific():
             print(f"  Vm:  {pyo.value(model.Vm_total):.4f} m3/kmol")
             print(f"  Cp:  {pyo.value(model.Cp_mass):.3f} J/g.K")
             print(f"  RED: {pyo.value(model.RED):.3f}")
-            print(f"       (d_d={pyo.value(model.delta_d):.1f}, d_p={pyo.value(model.delta_p):.1f}, d_h={pyo.value(model.delta_h):.1f})")
         else:
-            print("No feasible solution found with current constraints.")
+            print("No feasible solution found via GAMS.")
             
     except Exception as e:
         print(f"Solver Error: {e}")
-        print("Tip: Ensure you have ipopt and glpk installed in your environment.")
+        print("Tip: Ensure GAMS is installed and readable by Pyomo.")
+        print("If you don't have GAMS, try installing glpk/ipopt via conda.")
 
 if __name__ == "__main__":
     solve_scientific()
