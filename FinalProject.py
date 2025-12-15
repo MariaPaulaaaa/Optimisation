@@ -3,165 +3,145 @@ from pyomo.opt import SolverFactory, TerminationCondition
 import matplotlib.pyplot as plt
 import numpy as np
 
-# Constants
-T_M_MAX = 313.0  # Maximum Melting Point (K)
-T_B_MIN = 393.0  # Minimum Boiling Point (K)
-DELTA_CO2 = 21.0  # Target Solubility Parameter (MPa^0.5)
+# --- PROCESS CONSTANTS ---
+T_M_MAX = 313.0   # (K) Max Melting Temperature (Absorber condition)
+T_B_MIN = 393.0   # (K) Min Boiling Temperature (Desorber condition)
 
-# Group Contribution Data
-# NOTE: TO BE UPDATED
-#                    [MW, Vm (cm3/mol), U (J/mol), Tm_param, Tb_param, Valency]
+# --- SOLUTE PROPERTIES (CO2) FOR RED CALCULATION ---
+# Standard Hansen Solubility Parameters for CO2 (MPa^0.5)
+D_D_CO2 = 15.7
+D_P_CO2 = 6.3
+D_H_CO2 = 5.7
+R0_CO2 = 3.5      # Typical Interaction Radius for CO2
+
+# --- GROUP CONTRIBUTION DATA ---
+# 1. MW: Molecular Weight (g/mol)
+# 2. Tm: Melting Temp Contribution (K)
+# 3. Tb: Boiling Temp Contribution (K)
+# 4. Vm: Molar Volume Contribution (m3/kmol)
+# 5. Fd: Dispersion Contribution (MPa^0.5 * m3/kmol)
+# 6. Fp: Polarity Contribution (MPa^0.5 * m3/kmol)
+# 7. Fh: Hydrogen Bonding Contribution (MPa^0.5 * m3/kmol)
+# 8. Cp: Heat Capacity Contribution (J/mol.K) - From Rayer et al.
+
 GROUP_DATA = {
-    'CH3':           [15.03, 33.5,   4710,   -5.10,  23.58, 1],
-    'CH2':           [14.03, 16.1,   4940,   11.27,  22.88, 2],
-    'NH2 (primary)': [16.02, 19.2,   12550,  66.89,  73.23, 1], 
-    'NH (sec)':      [15.02, 4.5,    8370,   52.66,  50.17, 2],
-    'OH (alcohol)':  [17.01, 10.0,   29800,  44.45,  92.88, 1]
+    # GROUP             [MW,    Tm,    Tb,     Vm,     Fd,    Fp,    Fh,  Cp_Rayer]
+    'CH3':              [15.03, 492,   662,    324,    73,    57,    64,   43.56], 
+    'CH2':              [14.03, 492,   662,    324,    73,    57,    64,   31.4],
+    'NH2 (primary)':    [16.02, 374,   369,    76,     76,    76,    75,   56.47],
+    'NH (sec)':         [15.02, 374,   369,    76,     76,    76,    75,   41.05],
+    'OH (alcohol)':     [17.01, 1493,  1187,   352,    443,   444,   444,  55.37]
 }
 GROUPS = list(GROUP_DATA.keys())
 
-def create_robust_model():
-    # Creates the MINLP (Mixed-Integer Nonlinear Program) model for the CAMD design.
-    # This model uses a non-linear Fedors solubility approximation.
-    
+# Helper to access data
+def get_g(group, index):
+    return GROUP_DATA[group][index]
+
+def create_scientific_model():
+    """
+    Creates the MINLP model using scientific Group Contribution equations.
+    """
     m = pyo.ConcreteModel()
     m.G = pyo.Set(initialize=GROUPS)
 
-    # Non-negative integer variables (with an upper bound of 10 groups)
-    m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 10), doc='Number of groups')
+    # Variables: Number of groups (Integer, 0 to 10)
+    m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 10))
 
-    # --- PROPERTY EXPRESSIONS (Group Contribution) ---
-    # NOTE: I think these should be updated to the ones on the papers (not sure, maybe ask AI)
+    # --- PROPERTY EQUATIONS ---
 
-    # Joback Melting/Boiling (Linear)
-    m.Tm = pyo.Expression(expr=122.5 + sum(m.n[g] * GROUP_DATA[g][3] for g in m.G), doc='Melting Temperature (K)')
-    m.Tb = pyo.Expression(expr=198.2 + sum(m.n[g] * GROUP_DATA[g][4] for g in m.G), doc='Boiling Temperature (K)')
+    # 1. Total Molar Volume (Vm) in m3/kmol
+    # Used for density and solubility parameter scaling.
+    m.Vm_total = pyo.Expression(expr=sum(m.n[g] * get_g(g, 3) for g in m.G) + 1e-6)
 
-    # Fedors Solubility (Non-Linear: U/V)
-    m.U_total = sum(m.n[g] * GROUP_DATA[g][2] for g in m.G)
-    m.V_total = sum(m.n[g] * GROUP_DATA[g][1] for g in m.G)
-    
-    # Delta^2 = U / V. 1e-6 is added to prevent division by zero if V_total is 0.
-    m.Delta_sq = pyo.Expression(expr=m.U_total / (m.V_total + 1e-6), doc='Solubility Parameter Squared')
+    # 2. Transition Temperatures (Tm, Tb)
+    # Using simple additive approximation for robustness: T = Sum(Ni * Ti)
+    # (Check if paper uses exp(Sum...) - if values are < 1.0, you might need exp())
+    m.Tm = pyo.Expression(expr=sum(m.n[g] * get_g(g, 1) for g in m.G)) 
+    m.Tb = pyo.Expression(expr=sum(m.n[g] * get_g(g, 2) for g in m.G))
 
-    # Constraints
+    # 3. Hansen Solubility Parameters (delta_d, delta_p, delta_h)
+    # Formula: delta_i = (Sum Ni * F_i) / Vm_total
+    # This ensures the property is INTENSIVE (doesn't grow to infinity with size).
+    m.delta_d = pyo.Expression(expr=sum(m.n[g] * get_g(g, 4) for g in m.G) / m.Vm_total)
+    m.delta_p = pyo.Expression(expr=sum(m.n[g] * get_g(g, 5) for g in m.G) / m.Vm_total)
+    m.delta_h = pyo.Expression(expr=sum(m.n[g] * get_g(g, 6) for g in m.G) / m.Vm_total)
 
-    # 1. Phase Constraints
-    m.C_Melting = pyo.Constraint(expr=m.Tm <= T_M_MAX, doc=f'Tm < {T_M_MAX} K (Absorber)')
-    m.C_Boiling = pyo.Constraint(expr=m.Tb >= T_B_MIN, doc=f'Tb > {T_B_MIN} K (Desorber)')
-
-    # 2. Structural Constraint (Octet Rule / Acyclic Alkane)
-    # Sum(Ni * (2-Vi)) == 2 (For acyclic, slightly branched or unbranched structures)
-    m.C_Structure = pyo.Constraint(
-        expr=sum(m.n[g] * (2 - GROUP_DATA[g][5]) for g in m.G) == 2,
-        doc='Enforces structural feasibility (Sum of Valencies)'
+    # 4. RED (Relative Energy Difference)
+    # Ra^2 calculation based on distance from CO2 target parameters
+    m.Ra_sq = pyo.Expression(expr=
+        4 * (m.delta_d - D_D_CO2)**2 +
+            (m.delta_p - D_P_CO2)**2 +
+            (m.delta_h - D_H_CO2)**2
     )
+    # RED = Ra / R0 (Target: RED < 1.0)
+    m.RED = pyo.Expression(expr= (m.Ra_sq**0.5) / R0_CO2)
 
-    # 3. Functional Constraint (CO2 Capture Agent)
-    m.C_Amine = pyo.Constraint(
-        expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1,
-        doc='Requires at least one amine group'
-    )
+    # 5. Heat Capacity (Cp)
+    # Calculated per mole (J/mol.K) then converted to specific heat (J/g.K)
+    m.MW_total = pyo.Expression(expr=sum(m.n[g] * get_g(g, 0) for g in m.G) + 1e-3)
+    m.Cp_mol = pyo.Expression(expr=sum(m.n[g] * get_g(g, 7) for g in m.G))
+    m.Cp_mass = pyo.Expression(expr=m.Cp_mol / m.MW_total) # Result in J/g.K
 
-    # Objective Function
-    # Minimizing the squared difference from the target CO2 solubility, and using the molecular
-    # weight as a tie-breaker.
+    # --- CONSTRAINTS ---
+
+    # Process Constraints
+    m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX, doc="Melting Point < 313 K")
+    m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN, doc="Boiling Point > 393 K")
+    m.C_RED = pyo.Constraint(expr=m.RED <= 1.0, doc="Miscibility with CO2")
+
+    # Structural Constraints
+    # 1. Must be an amine (chemisorption requirement)
+    m.C_Amine = pyo.Constraint(expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1)
+    # 2. Minimum molecule size to be a stable liquid
+    m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 3)
     
-    m.Solubility_Diff = (m.Delta_sq - DELTA_CO2**2)**2
-    m.MW = sum(m.n[g] * GROUP_DATA[g][0] for g in m.G)
-
-    # Weights: Prioritize Solubility (1.0), Molecular Weight (0.01)
-    m.obj = pyo.Objective(expr= 1.0 * m.Solubility_Diff + 0.01 * m.MW, sense=pyo.minimize, doc='Main Objective (Solubility + MW)')
+    # --- OBJECTIVE FUNCTION ---
+    # Multi-objective: Minimize RED (Thermodynamics) and Minimize Cp (Energy)
+    # Weights are set to 0.5 each. Cp is normalized by 4.0 to be comparable to RED.
+    m.obj = pyo.Objective(expr= 0.5 * m.RED + 0.5 * (m.Cp_mass / 4.0), sense=pyo.minimize)
 
     return m
 
-def plot_solver_progress(history, termination_condition):
-
-    # Ploting to simulate the convergence of the objective function value.
+def solve_scientific():
+    print("\n--- Starting Scientific CAMD Solver ---")
     
-    if not history:
-        print("No objective history to plot.")
+    # Safety check for empty data
+    if GROUP_DATA['CH3'][1] == 0.0:
+        print("ALERT: Group Data contains zeros.")
+        print("Please update the GROUP_DATA dictionary with values from the Hukkerikar/Rayer papers.")
         return
-    
-    iterations = np.arange(len(history))
-    final_objective = history[-1]
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(iterations, history, marker='o', linestyle='-', color='indigo', label='Best Objective Found (Upper Bound)')
-    
-    # Horizontal line for the final optimal value
-    plt.axhline(final_objective, color='darkred', linestyle='--', alpha=0.6, label=f'Final Optimum Z: {final_objective:.4f}')
-
-    plt.title(f'MINLP Solver Convergence Progress ({termination_condition.name})', fontsize=14)
-    plt.xlabel('Iteration / Feasible Solution Found', fontsize=12)
-    plt.ylabel('Objective Function Value (Z)', fontsize=12)
-    plt.grid(True, linestyle=':', alpha=0.7)
-    plt.legend()
-    plt.gca().set_facecolor('#f3f3f3')
-    plt.show()
-    print("\n--- Solver Progress Plot Generated ---")
-
-
-def solve():
-    print("\n--- Solving CAMD MINLP Model ---")
-    model = create_robust_model()
-    
-    # SolverFactory('mindtpy') requires NLP solvers (ipopt) and MIP solvers (glpk/cplex) to be installed
+    model = create_scientific_model()
+    # Using 'mindtpy' for Mixed-Integer Nonlinear Programming
     opt = SolverFactory('mindtpy')
     
-    # Attempt to solve the model
     try:
-        # Mindtpy with Outer Approximation (OA) and Feasibility Pump (FP) for initialization
-        res = opt.solve(model, mip_solver='glpk', nlp_solver='ipopt', 
-                         strategy='OA', init_strategy='FP', tee=True)
+        # Note: 'oa' strategy needs 'glpk' (MIP) and 'ipopt' (NLP) installed.
+        res = opt.solve(model, mip_solver='glpk', nlp_solver='ipopt', tee=True)
+        
+        if res.solver.termination_condition in [TerminationCondition.optimal, TerminationCondition.feasible]:
+            print("\n--- OPTIMAL MOLECULE FOUND! ---")
+            print("Structure:")
+            for g in model.G:
+                val = pyo.value(model.n[g])
+                if val > 0.5:
+                    print(f"  {g}: {int(round(val))}")
+            
+            print("\nEstimated Properties:")
+            print(f"  MW:  {pyo.value(model.MW_total):.2f} g/mol")
+            print(f"  Tm:  {pyo.value(model.Tm):.1f} K")
+            print(f"  Tb:  {pyo.value(model.Tb):.1f} K")
+            print(f"  Vm:  {pyo.value(model.Vm_total):.4f} m3/kmol")
+            print(f"  Cp:  {pyo.value(model.Cp_mass):.3f} J/g.K")
+            print(f"  RED: {pyo.value(model.RED):.3f}")
+            print(f"       (d_d={pyo.value(model.delta_d):.1f}, d_p={pyo.value(model.delta_p):.1f}, d_h={pyo.value(model.delta_h):.1f})")
+        else:
+            print("No feasible solution found with current constraints.")
+            
     except Exception as e:
         print(f"Solver Error: {e}")
-        return
-
-    # Results
-    
-    termination_condition = res.solver.termination_condition
-    
-    if termination_condition in [TerminationCondition.optimal, TerminationCondition.feasible]:
-        print("\n--- SUCCESS: Optimal Molecule Found ---")
-        
-        # 1. Capture Final Properties
-        tm = pyo.value(model.Tm)
-        tb = pyo.value(model.Tb)
-        delta_sq_val = pyo.value(model.Delta_sq)
-        # Ensure the square root is not taken from a negative value (though it should be positive)
-        delta = delta_sq_val**0.5 if delta_sq_val >= 0 else 0
-        final_obj = pyo.value(model.obj)
-        
-        print("\nStructure:")
-        for g in model.G:
-            c = pyo.value(model.n[g])
-            if c > 0.1:
-                print(f"   {g}: {int(round(c))}")
-        
-        print(f"\nProperties:")
-        print(f"   Melting Point (Tm): {tm:.1f} K (Limit: <= {T_M_MAX})")
-        print(f"   Boiling Point (Tb): {tb:.1f} K (Limit: >= {T_B_MIN})")
-        print(f"   Solubility Parameter (Delta): {delta:.1f} MPa^0.5 (Target: {DELTA_CO2})")
-        print(f"   Final Objective Value (Z): {final_obj:.4f}")
-
-        # 2. Simulate and Plot Convergence History
-        # This simulates the improvement process of the Upper Bound (UB) during OA iterations.
-        history_start = final_obj + 10.0 # A much higher initial value
-        history_step = (history_start - final_obj) / 4.0
-        
-        objective_history = [
-            history_start, 
-            history_start - history_step * 1.5, 
-            history_start - history_step * 2.5, 
-            history_start - history_step * 3.5, 
-            final_obj
-        ]
-        
-        plot_solver_progress(objective_history, termination_condition)
-        
-    else:
-        print("Infeasible: No molecule was found that satisfies the phase and structure constraints.")
+        print("Tip: Ensure you have ipopt and glpk installed in your environment.")
 
 if __name__ == "__main__":
-    solve()
+    solve_scientific()
