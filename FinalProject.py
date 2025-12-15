@@ -12,13 +12,13 @@ T_B_MIN = 393.0  # K
 
 # --- CORRECT DATA (Extracted from Hukkerikar 2012 & Rayer 2011) ---
 GROUP_DATA = {
-    # GROUP             [MW,    Tm,      Tb,      Vm,      Fd,     Fp,     Fh,     Cp_Rayer, Valency]
-    #                   g/mol   (C_Tm)   (C_Tb)   m3/kmol  MPa^.5  MPa^.5  MPa^.5  J/mol.K   (-)
-    'CH3':              [15.03, 0.6699,  0.8853,  0.0241,  7.5697,  1.9996,  2.2105,  43.56,   1], 
-    'CH2':              [14.03, 0.2992,  0.5815,  0.0165, -0.0018, -0.1492, -0.2150,  31.40,   2],
-    'NH2 (primary)':    [16.02, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,  6.7984,  56.47,   1],
-    'NH (sec)':         [15.02, 2.0673,  1.3838,  0.0260,  0.2374,  0.1072,  1.4183,  41.05,   2],
-    'OH (alcohol)':     [17.01, 3.2702,  2.1385,  0.0044,  8.0236,  4.9598,  11.8005, 55.37,   1]
+    # GROUP             [MW,    Tm,      Tb,      Vm,      Fd,      Fp,       Fh,      Cp_Rayer, Valency]
+    #                   g/mol   (C_Tm)   (C_Tb)   m3/kmol  MPa^.5   MPa^.5    MPa^.5   J/mol.K   (-)
+    'CH3':              [15.03, 0.6699,  0.8853,  0.0241,  7.5697,  1.9996,   2.2105,  43.56,    1], 
+    'CH2':              [14.03, 0.2992,  0.5815,  0.0165, -0.0018, -0.1492,  -0.2150,  31.40,    2],
+    'NH2 (primary)':    [16.02, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,   6.7984,  56.47,    1],
+    'NH (sec)':         [15.02, 2.0673,  1.3838,  0.0260,  0.2374,  0.1072,   1.4183,  41.05,    2],
+    'OH (alcohol)':     [17.01, 3.2702,  2.1385,  0.0044,  8.0236,  4.9598,  11.8005,  55.37,    1]
 }
 GROUPS = list(GROUP_DATA.keys())
 
@@ -49,10 +49,12 @@ def create_model():
     m.Vm = pyo.Expression(expr=sum(m.n[g] * get_g(g, 3) for g in m.G) + 1e-4)
 
     # 3. Solubility Parameters (Hansen)
-    # delta = Sum(Ni * Fi) / Vm_total
-    m.dd = pyo.Expression(expr=sum(m.n[g] * get_g(g, 4) for g in m.G) / m.Vm)
-    m.dp = pyo.Expression(expr=sum(m.n[g] * get_g(g, 5) for g in m.G) / m.Vm)
-    m.dh = pyo.Expression(expr=sum(m.n[g] * get_g(g, 6) for g in m.G) / m.Vm)
+    # UPDATED FORMULA: Simple Additive Model (Sum Ni * Fi)
+    # Based on the magnitude of user-provided coefficients (e.g., Fd ~ 15 for alkanes),
+    # dividing by Vm resulted in incorrect values (~50). Additive works correctly here.
+    m.dd = pyo.Expression(expr=sum(m.n[g] * get_g(g, 4) for g in m.G))
+    m.dp = pyo.Expression(expr=sum(m.n[g] * get_g(g, 5) for g in m.G))
+    m.dh = pyo.Expression(expr=sum(m.n[g] * get_g(g, 6) for g in m.G))
 
     # 4. RED (Relative Energy Difference)
     m.Ra2 = pyo.Expression(expr=4*(m.dd - D_D_CO2)**2 + (m.dp - D_P_CO2)**2 + (m.dh - D_H_CO2)**2)
@@ -68,10 +70,8 @@ def create_model():
     m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX)
     m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN)
     
-    # RELAXED RED CONSTRAINT: The input values for Fd/Fp/Fh produce very large delta values 
-    # (>300 MPa^0.5), causing RED to be >> 2.5. We relax this to 500.0 to avoid infeasibility
-    # and allow the solver to focus on Tm/Tb and Cp.
-    m.C_RED = pyo.Constraint(expr=m.RED <= 500.0) 
+    # STRICT RED CONSTRAINT: Now attempting to satisfy RED <= 1.0
+    m.C_RED = pyo.Constraint(expr=m.RED <= 1.0) 
 
     m.C_Amine = pyo.Constraint(expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1)
     m.C_Struc = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 3) # Minimum 3 groups
