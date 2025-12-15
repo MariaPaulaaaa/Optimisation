@@ -11,15 +11,14 @@ T_M_MAX = 313.0  # K
 T_B_MIN = 393.0  # K
 
 # --- CORRECT DATA (Extracted from Hukkerikar 2012 & Rayer 2011) ---
-# Values updated to the correct First-Order coefficients for the logarithmic model.
 GROUP_DATA = {
-    # GROUP             [MW,    Tm,      Tb,      Vm,      Fd,     Fp,     Fh,     Cp_Rayer]
-    #                   g/mol   (C_Tm)   (C_Tb)   m3/kmol  MPa^.5  MPa^.5  MPa^.5  J/mol.K
-    'CH3':              [15.03, 0.6699,  0.8853,  0.0241,  7.5697,  1.9996,  2.2105,  43.56], 
-    'CH2':              [14.03, 0.2992,  0.5815,  0.0165, -0.0018, -0.1492, -0.2150,  31.40],
-    'NH2 (primary)':    [16.02, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,  6.7984,  56.47],
-    'NH (sec)':         [15.02, 2.0673,  1.3838,  0.0260,  0.2374,  0.1072,  1.4183,  41.05],
-    'OH (alcohol)':     [17.01, 3.2702,  2.1385,  0.0044,  8.0236,  4.9598,  11.8005, 55.37]
+    # GROUP             [MW,    Tm,      Tb,      Vm,      Fd,     Fp,     Fh,     Cp_Rayer, Valency]
+    #                   g/mol   (C_Tm)   (C_Tb)   m3/kmol  MPa^.5  MPa^.5  MPa^.5  J/mol.K   (-)
+    'CH3':              [15.03, 0.6699,  0.8853,  0.0241,  7.5697,  1.9996,  2.2105,  43.56,   1], 
+    'CH2':              [14.03, 0.2992,  0.5815,  0.0165, -0.0018, -0.1492, -0.2150,  31.40,   2],
+    'NH2 (primary)':    [16.02, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,  6.7984,  56.47,   1],
+    'NH (sec)':         [15.02, 2.0673,  1.3838,  0.0260,  0.2374,  0.1072,  1.4183,  41.05,   2],
+    'OH (alcohol)':     [17.01, 3.2702,  2.1385,  0.0044,  8.0236,  4.9598,  11.8005, 55.37,   1]
 }
 GROUPS = list(GROUP_DATA.keys())
 
@@ -76,6 +75,11 @@ def create_model():
 
     m.C_Amine = pyo.Constraint(expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1)
     m.C_Struc = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 3) # Minimum 3 groups
+
+    # NEW: Valence/Structural Feasibility Rule
+    # Sum(Ni * (2 - Vi)) = 2  (Ensures exactly 2 terminal groups for an acyclic chain)
+    # Vi = 1 for CH3, NH2, OH; Vi = 2 for CH2, NH
+    m.C_Valence = pyo.Constraint(expr=sum(m.n[g] * (2 - get_g(g, 8)) for g in m.G) == 2)
 
     # --- OBJECTIVE ---
     # Minimize Cp and RED
