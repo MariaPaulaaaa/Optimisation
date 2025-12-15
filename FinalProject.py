@@ -25,8 +25,8 @@ GROUP_DATA = {
 GROUPS = list(GROUP_DATA.keys())
 
 # CO2 Properties for RED calculation
-# Source: Marcus (2018)
-D_D_CO2, D_P_CO2, D_H_CO2, R0_CO2 = 15.6, 5.2, 5.8, 3.5
+# Source: Hansen (2007)
+D_D_CO2, D_P_CO2, D_H_CO2, R0_CO2 = 15.7, 6.3, 5.7, 3.3
 
 def get_g(group, index):
     return GROUP_DATA[group][index]
