@@ -1,29 +1,32 @@
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory, TerminationCondition
 
-# --- HUKKERIKAR MODEL CONSTANTS (GC+) ---
-# Source: Hukkerikar et al. (2012)
-T_M0 = 143.5706   # K
-T_B0 = 244.5165   # K
+# --- Hukkerikar Model Constants (GC+) ---
+# Source: Hukkerikar et al. (2012), Table 5
+T_M0 = 143.5706   # Melting Temperature, K
+T_B0 = 244.5165   # Boiling Temperature, K
 
-# --- PROCESS CONSTRAINTS ---
-T_M_MAX = 313.0  # K
-T_B_MIN = 393.0  # K
+# --- Process Constraints ---
+# Source: Project Brief
+T_M_MAX = 313.0  # Melting Temperature, K
+T_B_MIN = 393.0  # Boiling Temperature, K
 
-# --- CORRECT DATA (Extracted from Hukkerikar 2012 & Rayer 2011) ---
+# --- First-order groups, step-wise regression method ---
+# Source: Hukkerikar (2012) & Rayer (2011)
 GROUP_DATA = {
     # GROUP             [MW,    Tm,      Tb,      Vm,      Fd,      Fp,       Fh,      Cp_Rayer, Valency]
     #                   g/mol   (C_Tm)   (C_Tb)   m3/kmol  MPa^.5   MPa^.5    MPa^.5   J/mol.K   (-)
     'CH3':              [15.03, 0.6699,  0.8853,  0.0241,  7.5697,  1.9996,   2.2105,  43.56,    1], 
     'CH2':              [14.03, 0.2992,  0.5815,  0.0165, -0.0018, -0.1492,  -0.2150,  31.40,    2],
-    'NH2 (primary)':    [16.02, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,   6.7984,  56.47,    1],
-    'NH (sec)':         [15.02, 2.0673,  1.3838,  0.0260,  0.2374,  0.1072,   1.4183,  41.05,    2],
+    'NH2 (primary)':    [16.02, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,   6.7984,  56.47,    1], # CH2NH2
+    'NH (sec)':         [15.02, 2.0673,  1.3838,  0.0260,  0.2374,  0.1072,   1.4183,  41.05,    2], # CH2NH
     'OH (alcohol)':     [17.01, 3.2702,  2.1385,  0.0044,  8.0236,  4.9598,  11.8005,  55.37,    1]
 }
 GROUPS = list(GROUP_DATA.keys())
 
 # CO2 Properties for RED calculation
-D_D_CO2, D_P_CO2, D_H_CO2, R0_CO2 = 15.7, 6.3, 5.7, 3.5
+# Source: Marcus (2018)
+D_D_CO2, D_P_CO2, D_H_CO2, R0_CO2 = 15.6, 5.2, 5.8, 3.5
 
 def get_g(group, index):
     return GROUP_DATA[group][index]
@@ -33,11 +36,11 @@ def create_model():
     m.G = pyo.Set(initialize=GROUPS)
     
     # Variables: Number of groups (0 to 15)
-    # FIX 1: 'initialize=1' prevents starting with all zeros (log(0) error).
+    # Iinitialize=1 prevents starting with all zeros, as log(0) will display an error
     # Increased upper bound to 15 to allow larger molecules if needed.
     m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 15), initialize=1)
 
-    # 1. Temperatures (Hukkerikar Logarithmic Model)
+    # Temperatures (Hukkerikar Logarithmic Model)
     # Tm = T_m0 * ln( Sum Ni * C_Tmi )
     m.Tm_sum = pyo.Expression(expr=sum(m.n[g] * get_g(g, 1) for g in m.G) + 0.001)
     m.Tb_sum = pyo.Expression(expr=sum(m.n[g] * get_g(g, 2) for g in m.G) + 0.001)
@@ -49,9 +52,7 @@ def create_model():
     m.Vm = pyo.Expression(expr=sum(m.n[g] * get_g(g, 3) for g in m.G) + 1e-4)
 
     # 3. Solubility Parameters (Hansen)
-    # UPDATED FORMULA: Simple Additive Model (Sum Ni * Fi)
-    # Based on the magnitude of user-provided coefficients (e.g., Fd ~ 15 for alkanes),
-    # dividing by Vm resulted in incorrect values (~50). Additive works correctly here.
+    # d = Sum Ni * Fi
     m.dd = pyo.Expression(expr=sum(m.n[g] * get_g(g, 4) for g in m.G))
     m.dp = pyo.Expression(expr=sum(m.n[g] * get_g(g, 5) for g in m.G))
     m.dh = pyo.Expression(expr=sum(m.n[g] * get_g(g, 6) for g in m.G))
@@ -61,34 +62,31 @@ def create_model():
     m.RED = pyo.Expression(expr=(m.Ra2**0.5) / R0_CO2)
 
     # 5. Specific Heat Capacity (Cp)
-    # FIX 2: Added +1e-6 to avoid division by zero if all n=0
+    # Adding 1e-6 to avoid division by zero if all n=0
     m.MW = pyo.Expression(expr=sum(m.n[g] * get_g(g, 0) for g in m.G) + 1e-6)
     m.Cp_mol = pyo.Expression(expr=sum(m.n[g] * get_g(g, 7) for g in m.G))
     m.Cp_mass = pyo.Expression(expr=m.Cp_mol / m.MW)
 
-    # --- CONSTRAINTS ---
+    # --- Constraints ---
     m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX)
     m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN)
-    
-    # STRICT RED CONSTRAINT: Now attempting to satisfy RED <= 1.0
     m.C_RED = pyo.Constraint(expr=m.RED <= 1.0) 
 
     m.C_Amine = pyo.Constraint(expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1)
     m.C_Struc = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 3) # Minimum 3 groups
 
-    # NEW: Valence/Structural Feasibility Rule
-    # Sum(Ni * (2 - Vi)) = 2  (Ensures exactly 2 terminal groups for an acyclic chain)
-    # Vi = 1 for CH3, NH2, OH; Vi = 2 for CH2, NH
+    # Valence/Structural Feasibility Rule
+    # Sum(Ni * (2 - Vi)) = 2
     m.C_Valence = pyo.Constraint(expr=sum(m.n[g] * (2 - get_g(g, 8)) for g in m.G) == 2)
 
-    # --- OBJECTIVE ---
+    # --- Objective ---
     # Minimize Cp and RED
     m.obj = pyo.Objective(expr=0.5*m.RED + 0.5*(m.Cp_mass/4.0), sense=pyo.minimize)
 
     return m
 
 def solve():
-    print("\n--- Running GAMS Solver with Corrected Data ---")
+    print("\n--- Running GAMS Solver ---")
     model = create_model()
     opt = SolverFactory('gams')
     
