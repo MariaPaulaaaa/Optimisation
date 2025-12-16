@@ -30,7 +30,7 @@ GROUPS = list(GROUP_DATA.keys())
 D_D_CO2, D_P_CO2, D_H_CO2, R0_CO2 = 15.7, 6.3, 5.7, 3.3
 
 # Scaling Ranges
-# [Min, Max] ranges are defined to normalize properties between 0 and 1.
+# [Min, Max] ranges are defined to normalise properties between 0 and 1.
 # These are reasonable estimates for organic solvents.
 RED_MIN, RED_MAX = 0.0, 3.0
 CP_MIN, CP_MAX   = 1.5, 3.5   # J/g.K
@@ -101,8 +101,8 @@ def create_model():
     # Sum(Ni * (2 - Vi)) = 2
     m.C_Valence = pyo.Constraint(expr=sum(m.n[g] * (2 - get_g(g, 8)) for g in m.G) == 2)
 
-    # --- Objective ---
-    # Minimize Cp and RED
+    # --- Objective Function ---
+    # Minimize Cp and RED, maximise density
     m.obj = pyo.Objective(expr= 
         (1/3) * m.Scaled_RED + 
         (1/3) * m.Scaled_Cp - 
