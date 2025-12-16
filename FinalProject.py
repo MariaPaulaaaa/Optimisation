@@ -104,12 +104,7 @@ def create_model():
 
     # --- Objective Function ---
     # Minimize Cp and RED, maximise density
-    m.obj = pyo.Objective(expr= 
-        (1/3) * m.Scaled_RED + 
-        (1/3) * m.Scaled_Cp - 
-        (1/3) * m.Scaled_Rho, 
-        sense=pyo.minimize
-    )
+    m.obj = pyo.Objective(expr= (1/3) * m.Scaled_RED + (1/3) * m.Scaled_Cp - (1/3) * m.Scaled_Rho, sense=pyo.minimize)
     return m
 
 def solve():
