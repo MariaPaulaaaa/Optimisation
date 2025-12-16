@@ -95,6 +95,7 @@ def create_model():
 
     m.C_Amine = pyo.Constraint(expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1)
     m.C_Struc = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 3) # Minimum 3 groups
+    m.C_TotalSize = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 8)
 
     # Valence/Structural Feasibility Rule
     # Sum(Ni * (2 - Vi)) = 2
