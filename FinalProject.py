@@ -88,11 +88,12 @@ def create_model():
     m.Scaled_Cp  = pyo.Expression(expr=(m.Cp_mass - CP_MIN) / (CP_MAX - CP_MIN))
     m.Scaled_Rho = pyo.Expression(expr=(m.Rho - RHO_MIN) / (RHO_MAX - RHO_MIN))
 
-    # Constraints
+    # Constraints specified in the project brief
     m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX)
     m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN)
     m.C_RED = pyo.Constraint(expr=m.RED <= 1.0) 
 
+    # Constraints set based on literature
     m.C_Amine = pyo.Constraint(expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1)
     m.C_Struc = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 3) # Minimum 3 groups
     m.C_TotalSize = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 5)
