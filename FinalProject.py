@@ -1,18 +1,18 @@
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory, TerminationCondition
 
-# --- Hukkerikar Model Constants (GC+) ---
+# Hukkerikar Model Constants (GC+)
 # Source: Hukkerikar et al. (2012), Table 5
 T_M0 = 143.5706   # Melting Temperature, K
 T_B0 = 244.5165   # Boiling Temperature, K
 V_M0 = 0.0160     # Molar Volume, m3/kmol
 
-# --- Process Constraints ---
+# Process Constraints
 # Source: Project Brief
 T_M_MAX = 313.0  # Melting Temperature, K
 T_B_MIN = 393.0  # Boiling Temperature, K
 
-# --- First-order groups, step-wise regression method ---
+# First-order groups, step-wise regression method
 # Source: Hukkerikar (2012) & Rayer (2011)
 GROUP_DATA = {
     # GROUP             [MW,    Tm,      Tb,      Vm,      Fd,      Fp,       Fh,      Cp_Rayer, Valency]
@@ -28,6 +28,13 @@ GROUPS = list(GROUP_DATA.keys())
 # CO2 Properties for RED calculation
 # Source: Hansen (2007)
 D_D_CO2, D_P_CO2, D_H_CO2, R0_CO2 = 15.7, 6.3, 5.7, 3.3
+
+# Scaling Ranges
+# [Min, Max] ranges are defined to normalize properties between 0 and 1.
+# These are reasonable estimates for organic solvents.
+RED_MIN, RED_MAX = 0.0, 3.0
+CP_MIN, CP_MAX   = 1.5, 3.5   # J/g.K
+RHO_MIN, RHO_MAX = 700.0, 1200.0 # kg/m3
 
 def get_g(group, index):
     return GROUP_DATA[group][index]
@@ -63,13 +70,25 @@ def create_model():
     m.Ra2 = pyo.Expression(expr=4*(m.dd - D_D_CO2)**2 + (m.dp - D_P_CO2)**2 + (m.dh - D_H_CO2)**2)
     m.RED = pyo.Expression(expr=(m.Ra2**0.5) / R0_CO2)
 
-    # 5. Specific Heat Capacity (Cp)
+    # 6. Molecular Weight (g/mol or kg/kmol)
     # Adding 1e-6 to avoid division by zero if all n=0
     m.MW = pyo.Expression(expr=sum(m.n[g] * get_g(g, 0) for g in m.G) + 1e-6)
+
+    # 5. Specific Heat Capacity (Cp)
     m.Cp_mol = pyo.Expression(expr=sum(m.n[g] * get_g(g, 7) for g in m.G))
     m.Cp_mass = pyo.Expression(expr=m.Cp_mol / m.MW)
 
-    # --- Constraints ---
+    # 7. Density (rho)
+    # rho = MW / Vm
+    m.Rho = pyo.Expression(expr=m.MW / m.Vm)
+
+    # 8. Scaling
+    # Scaled = (Val - Min) / (Max - Min)
+    m.Scaled_RED = pyo.Expression(expr=(m.RED - RED_MIN) / (RED_MAX - RED_MIN))
+    m.Scaled_Cp  = pyo.Expression(expr=(m.Cp_mass - CP_MIN) / (CP_MAX - CP_MIN))
+    m.Scaled_Rho = pyo.Expression(expr=(m.Rho - RHO_MIN) / (RHO_MAX - RHO_MIN))
+
+    # Constraints
     m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX)
     m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN)
     m.C_RED = pyo.Constraint(expr=m.RED <= 1.0) 
@@ -83,8 +102,12 @@ def create_model():
 
     # --- Objective ---
     # Minimize Cp and RED
-    m.obj = pyo.Objective(expr=0.5*m.RED + 0.5*(m.Cp_mass/4.0), sense=pyo.minimize)
-
+    m.obj = pyo.Objective(expr= 
+        (1/3) * m.Scaled_RED + 
+        (1/3) * m.Scaled_Cp - 
+        (1/3) * m.Scaled_Rho, 
+        sense=pyo.minimize
+    )
     return m
 
 def solve():
@@ -93,9 +116,7 @@ def solve():
     opt = SolverFactory('gams')
     
     try:
-        # Using DICOPT (MINLP)
         res = opt.solve(model, solver='dicopt', tee=True)
-        
         if res.solver.termination_condition in [TerminationCondition.optimal, TerminationCondition.feasible]:
             print("\n--- MOLECULE FOUND! ---")
             print("Groups:")
@@ -104,10 +125,12 @@ def solve():
                 if val > 0.1: print(f"  {g}: {int(val)}")
             
             print(f"\nProperties:")
-            print(f"  Tm: {pyo.value(model.Tm):.1f} K (<= {T_M_MAX})")
-            print(f"  Tb: {pyo.value(model.Tb):.1f} K (>= {T_B_MIN})")
-            print(f"  Cp: {pyo.value(model.Cp_mass):.3f} J/g.K")
+            print(f"  Tm:  {pyo.value(model.Tm):.1f} K")
+            print(f"  Tb:  {pyo.value(model.Tb):.1f} K")
+            print(f"  Rho: {pyo.value(model.Rho):.1f} kg/m3")
+            print(f"  Cp:  {pyo.value(model.Cp_mass):.3f} J/g.K")
             print(f"  RED: {pyo.value(model.RED):.3f}")
+            print(f"  Obj: {pyo.value(model.obj):.4f}")
         else:
             print("No feasible solution found.")
     except Exception as e:
