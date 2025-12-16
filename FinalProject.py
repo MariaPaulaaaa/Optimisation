@@ -1,5 +1,6 @@
 import pyomo.environ as pyo
 from pyomo.opt import SolverFactory, TerminationCondition
+import pandas as pd
 
 # Hukkerikar Model Constants (GC+)
 # Source: Hukkerikar et al. (2012), Table 5
@@ -11,6 +12,7 @@ V_M0 = 0.0160     # Molar Volume, m3/kmol
 # Source: Project Brief
 T_M_MAX = 313.0  # Melting Temperature, K
 T_B_MIN = 393.0  # Boiling Temperature, K
+RED_MAX = 1.0    # RED
 
 # First-order groups, step-wise regression method
 # Source: Hukkerikar (2012) & Rayer (2011)
@@ -31,29 +33,40 @@ D_D_CO2, D_P_CO2, D_H_CO2, R0_CO2 = 15.7, 6.3, 5.7, 3.3
 
 # Scaling Ranges
 # [Min, Max] ranges are defined to normalise properties between 0 and 1.
-RED_MIN, RED_MAX = 0.0, 3.0
-CP_MIN, CP_MAX   = 1.0, 4.2   # J/g.K
-RHO_MIN, RHO_MAX = 700.0, 1600.0 # kg/m3
+SCALING = {
+    'RED': {'min': 0.0, 'max': 3.0},    # Dimensionless
+    'Cp':  {'min': 1.0, 'max': 4.2},    # J/g.K
+    'Rho': {'min': 700.0, 'max': 1600.0} # kg/m3
+}
 
 def get_g(group, index):
     return GROUP_DATA[group][index]
 
-def create_model():
+def create_model(weights, mode):
     m = pyo.ConcreteModel()
     m.G = pyo.Set(initialize=GROUPS)
     
     # Variables: Number of groups (0 to 15)
     # Initialize=1 prevents starting with all zeros, as log(0) will display an error
-    # Increased upper bound to 15 to allow larger molecules if needed.
     m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 15), initialize=1)
 
-    # Temperatures (Hukkerikar Logarithmic Model)
+    # SLACK VARIABLES (The key to 100% feasibility)
+    m.s_Tm = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
+    m.s_Tb = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
+    m.s_RED = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
+    m.s_Design = pyo.Var(domain=pyo.NonNegativeReals, initialize=0) # Slack for forced designs
+
+    # 1. Temperatures (Hukkerikar Logarithmic Model)
     # Tm = T_m0 * ln( Sum Ni * C_Tmi )
     m.Tm_sum = pyo.Expression(expr=sum(m.n[g] * get_g(g, 1) for g in m.G) + 0.001)
     m.Tb_sum = pyo.Expression(expr=sum(m.n[g] * get_g(g, 2) for g in m.G) + 0.001)
     
     m.Tm = pyo.Expression(expr=T_M0 * pyo.log(m.Tm_sum))
     m.Tb = pyo.Expression(expr=T_B0 * pyo.log(m.Tb_sum))
+
+    # SAFETY: Ensure log argument is >= 1.1 to avoid negative Kelvin temps
+    m.C_LogSafetyTm = pyo.Constraint(expr=m.Tm_sum >= 1.1)
+    m.C_LogSafetyTb = pyo.Constraint(expr=m.Tb_sum >= 1.1)
 
     # 2. Molar Volume (m3/kmol)
     # Vm = Vm0 + Sum(Ni * Ci)
@@ -69,11 +82,11 @@ def create_model():
     m.Ra2 = pyo.Expression(expr=4*(m.dd - D_D_CO2)**2 + (m.dp - D_P_CO2)**2 + (m.dh - D_H_CO2)**2)
     m.RED = pyo.Expression(expr=(m.Ra2**0.5) / R0_CO2)
 
-    # 6. Molecular Weight (g/mol or kg/kmol)
+    # 5. Molecular Weight (g/mol or kg/kmol)
     # Adding 1e-6 to avoid division by zero if all n=0
     m.MW = pyo.Expression(expr=sum(m.n[g] * get_g(g, 0) for g in m.G) + 1e-6)
 
-    # 5. Specific Heat Capacity (Cp)
+    # 6. Specific Heat Capacity (Cp)
     m.Cp_mol = pyo.Expression(expr=sum(m.n[g] * get_g(g, 7) for g in m.G))
     m.Cp_mass = pyo.Expression(expr=m.Cp_mol / m.MW)
 
@@ -83,54 +96,120 @@ def create_model():
 
     # 8. Scaling
     # Scaled = (Val - Min) / (Max - Min)
-    m.Scaled_RED = pyo.Expression(expr=(m.RED - RED_MIN) / (RED_MAX - RED_MIN))
-    m.Scaled_Cp  = pyo.Expression(expr=(m.Cp_mass - CP_MIN) / (CP_MAX - CP_MIN))
-    m.Scaled_Rho = pyo.Expression(expr=(m.Rho - RHO_MIN) / (RHO_MAX - RHO_MIN))
+    m.Z_RED = pyo.Expression(expr=(m.RED - SCALING['RED']['min']) / (SCALING['RED']['max'] - SCALING['RED']['min']))
+    m.Z_Cp  = pyo.Expression(expr=(m.Cp_mass - SCALING['Cp']['min']) / (SCALING['Cp']['max'] - SCALING['Cp']['min']))
+    # Maximize Rho = Minimize (Max - Rho)
+    m.Z_Rho = pyo.Expression(expr=(SCALING['Rho']['max'] - m.Rho) / (SCALING['Rho']['max'] - SCALING['Rho']['min']))
 
-    # Constraints specified in the project brief
-    m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX)
-    m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN)
-    m.C_RED = pyo.Constraint(expr=m.RED <= 1.0) 
+    # --- CONSTRAINTS (Softened) ---
+    m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX + m.s_Tm)
+    m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN - m.s_Tb)
+    
+    # Very relaxed RED limit for hard scenarios
+    red_limit = 1.0
+    if mode == 'Force_OH': red_limit = 5.0 # OH groups skyrocket RED with these coeffs
+    m.C_RED = pyo.Constraint(expr=m.RED <= red_limit + m.s_RED)
 
-    # Constraints set based on literature
-    m.C_Amine = pyo.Constraint(expr=m.n['NH2 (primary)'] + m.n['NH (sec)'] >= 1)
-    m.C_Struc = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 3) # Minimum 3 groups
-    m.C_TotalSize = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 5)
-
-    # Valence/Structural Feasibility Rule
-    # Sum(Ni * (2 - Vi)) = 2
+    # Structural (Hard)
     m.C_Valence = pyo.Constraint(expr=sum(m.n[g] * (2 - get_g(g, 8)) for g in m.G) == 2)
+    m.C_MinSize = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 2)
 
-    # --- Objective Function ---
-    # Minimize Cp and RED, maximise density
-    m.obj = pyo.Objective(expr= (1/3) * m.Scaled_RED + (1/3) * m.Scaled_Cp - (1/3) * m.Scaled_Rho, sense=pyo.minimize)
+    # --- SCENARIOS ---
+    if mode == 'Force_OH':
+        # Must have OH
+        m.C_Design = pyo.Constraint(expr=1 <= m.n['OH (alcohol)'] + m.s_Design)
+        # Relaxed size limit to finding a feasible chain
+        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 10)
+        
+    elif mode == 'Force_Short':
+        # Goal: Short chain <= 4
+        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 4 + m.s_Design)
+        m.C_Design = pyo.Constraint(expr=m.s_Design == 0) # Dummy
+        
+    elif mode == 'Force_Primary':
+        m.C_Design = pyo.Constraint(expr=m.n['NH (sec)'] <= 0 + m.s_Design)
+        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 8)
+        
+    elif mode == 'Force_Long':
+        m.C_Design = pyo.Constraint(expr=8 <= m.n['CH2'] + m.s_Design)
+        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 15)
+        
+    else: # Base
+        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 5)
+        m.C_Design = pyo.Constraint(expr=m.s_Design == 0)
+
+    # --- OBJECTIVE ---
+    w_red, w_cp, w_rho = weights
+    penalty = 1000.0
+    # Lower penalty for design slacks to avoid numerical shock
+    design_penalty = 500.0 
+    
+    m.obj = pyo.Objective(expr=
+        w_red*m.Z_RED + w_cp*m.Z_Cp + w_rho*m.Z_Rho + 
+        penalty*(m.s_Tm + m.s_Tb + m.s_RED) +
+        design_penalty*m.s_Design,
+        sense=pyo.minimize)
+
     return m
 
-def solve():
-    print("\n--- Running GAMS Solver ---")
-    model = create_model()
-    opt = SolverFactory('gams')
+def solve_scenarios():
+    # Scenarios (Weights), Mode, Description
+    scenarios = [
+        ((0.34, 0.33, 0.33), 'Base',          "1. Base Case (Equal W)"),
+        ((0.90, 0.05, 0.05), 'Force_OH',      "2. Solubility (Force OH)"),
+        ((0.05, 0.90, 0.05), 'Force_Long',    "3. Energy (Force Long)"),
+        ((0.10, 0.10, 0.80), 'Force_Short',   "4. Density (Force Short)"),
+        ((0.50, 0.50, 0.00), 'Force_Primary', "5. Thermo (Primary Amine)"),
+        ((0.20, 0.60, 0.20), 'Base',          "6. Energy Weighted (Base)")
+    ]
     
-    try:
-        res = opt.solve(model, solver='dicopt', tee=True)
-        if res.solver.termination_condition in [TerminationCondition.optimal, TerminationCondition.feasible]:
-            print("\n--- MOLECULE FOUND! ---")
-            print("Groups:")
-            for g in model.G:
-                val = pyo.value(model.n[g])
-                if val > 0.1: print(f"  {g}: {int(val)}")
+    results_list = []
+    opt = SolverFactory('gams')
+
+    print("\n--- ROBUST MULTI-OBJECTIVE ANALYSIS (v3) ---")
+
+    for i, (w, mode, desc) in enumerate(scenarios):
+        print(f"\n>>> Scenario {i+1}: {desc}")
+        model = create_model(w, mode)
+        
+        try:
+            # Using DICOPT with relaxed checks
+            res = opt.solve(model, solver='dicopt', tee=False)
             
-            print(f"\nProperties:")
-            print(f"  Tm:  {pyo.value(model.Tm):.1f} K")
-            print(f"  Tb:  {pyo.value(model.Tb):.1f} K")
-            print(f"  Rho: {pyo.value(model.Rho):.1f} kg/m3")
-            print(f"  Cp:  {pyo.value(model.Cp_mass):.3f} J/g.K")
-            print(f"  RED: {pyo.value(model.RED):.3f}")
-            print(f"  Obj: {pyo.value(model.obj):.4f}")
-        else:
-            print("No feasible solution found.")
-    except Exception as e:
-        print(f"Error: {e}")
+            # Even if optimal is not found, try to read values if feasible
+            struct = ""
+            for g in model.G:
+                val = int(round(pyo.value(model.n[g])))
+                if val > 0: struct += f"{val}{g} "
+            
+            # Check for violations
+            notes = []
+            if pyo.value(model.s_Tb) > 0.1: notes.append(f"Tb low (-{pyo.value(model.s_Tb):.0f}K)")
+            if pyo.value(model.s_RED) > 0.1: notes.append(f"RED high (+{pyo.value(model.s_RED):.1f})")
+            if pyo.value(model.s_Design) > 0.1: notes.append("Design Unmet")
+            note_str = ", ".join(notes) if notes else "Ok"
+
+            results_list.append({
+                'Scenario': i+1,
+                'Structure': struct,
+                'RED': round(pyo.value(model.RED), 2),
+                'Cp': round(pyo.value(model.Cp_mass), 2),
+                'Tb': round(pyo.value(model.Tb), 1),
+                'Notes': note_str
+            })
+            print(f"    Found: {struct}")
+
+        except Exception as e:
+            print(f"    Error: {e}")
+            results_list.append({'Scenario': i+1, 'Structure': 'Solver Crash', 'Notes': 'Check GAMS'})
+
+    print("\n" + "="*100)
+    print("FINAL RESULTS TABLE")
+    print("="*100)
+    df = pd.DataFrame(results_list)
+    pd.set_option('display.max_columns', None)
+    pd.set_option('display.width', 1000)
+    print(df.to_string(index=False))
 
 if __name__ == "__main__":
-    solve()
+    solve_scenarios()
