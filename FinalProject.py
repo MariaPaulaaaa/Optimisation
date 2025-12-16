@@ -5,6 +5,7 @@ from pyomo.opt import SolverFactory, TerminationCondition
 # Source: Hukkerikar et al. (2012), Table 5
 T_M0 = 143.5706   # Melting Temperature, K
 T_B0 = 244.5165   # Boiling Temperature, K
+V_M0 = 0.0160     # Molar Volume, m3/kmol
 
 # --- Process Constraints ---
 # Source: Project Brief
@@ -36,7 +37,7 @@ def create_model():
     m.G = pyo.Set(initialize=GROUPS)
     
     # Variables: Number of groups (0 to 15)
-    # Iinitialize=1 prevents starting with all zeros, as log(0) will display an error
+    # Initialize=1 prevents starting with all zeros, as log(0) will display an error
     # Increased upper bound to 15 to allow larger molecules if needed.
     m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 15), initialize=1)
 
@@ -49,8 +50,9 @@ def create_model():
     m.Tb = pyo.Expression(expr=T_B0 * pyo.log(m.Tb_sum))
 
     # 2. Molar Volume (m3/kmol)
-    m.Vm = pyo.Expression(expr=sum(m.n[g] * get_g(g, 3) for g in m.G) + 1e-4)
-
+    # Vm = Vm0 + Sum(Ni * Ci)
+    m.Vm = pyo.Expression(expr=V_M0 + sum(m.n[g] * get_g(g, 3) for g in m.G))
+    
     # 3. Solubility Parameters (Hansen)
     # d = Sum Ni * Fi
     m.dd = pyo.Expression(expr=sum(m.n[g] * get_g(g, 4) for g in m.G))
