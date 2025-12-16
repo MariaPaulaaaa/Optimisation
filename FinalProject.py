@@ -9,8 +9,8 @@ V_M0 = 0.0160     # Molar Volume, m3/kmol
 
 # Process Constraints
 # Source: Project Brief
-T_M_MAX = 313.0  # Melting Temperature, K
-T_B_MIN = 393.0  # Boiling Temperature, K
+T_M_MAX = 313  # Melting Temperature, K
+T_B_MIN = 393  # Boiling Temperature, K
 
 # First-order groups, step-wise regression method
 # Source: Hukkerikar (2012) & Rayer (2011)
