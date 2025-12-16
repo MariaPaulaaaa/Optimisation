@@ -31,10 +31,9 @@ D_D_CO2, D_P_CO2, D_H_CO2, R0_CO2 = 15.7, 6.3, 5.7, 3.3
 
 # Scaling Ranges
 # [Min, Max] ranges are defined to normalise properties between 0 and 1.
-# These are reasonable estimates for organic solvents.
 RED_MIN, RED_MAX = 0.0, 3.0
-CP_MIN, CP_MAX   = 1.5, 3.5   # J/g.K
-RHO_MIN, RHO_MAX = 700.0, 1200.0 # kg/m3
+CP_MIN, CP_MAX   = 1.0, 4.2   # J/g.K
+RHO_MIN, RHO_MAX = 700.0, 1600.0 # kg/m3
 
 def get_g(group, index):
     return GROUP_DATA[group][index]
