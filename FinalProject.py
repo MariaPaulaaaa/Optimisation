@@ -78,23 +78,23 @@ def create_model(weights, mode):
     m.dp = pyo.Expression(expr=sum(m.n[g] * get_g(g, 5) for g in m.G))
     m.dh = pyo.Expression(expr=sum(m.n[g] * get_g(g, 6) for g in m.G))
 
-    # 4. RED (Relative Energy Difference)
+    # RED (Relative Energy Difference)
     m.Ra2 = pyo.Expression(expr=4*(m.dd - D_D_CO2)**2 + (m.dp - D_P_CO2)**2 + (m.dh - D_H_CO2)**2)
     m.RED = pyo.Expression(expr=(m.Ra2**0.5) / R0_CO2)
 
-    # 5. Molecular Weight (g/mol or kg/kmol)
+    # Molecular Weight (g/mol or kg/kmol)
     # Adding 1e-6 to avoid division by zero if all n=0
     m.MW = pyo.Expression(expr=sum(m.n[g] * get_g(g, 0) for g in m.G) + 1e-6)
 
-    # 6. Specific Heat Capacity (Cp)
+    # Specific Heat Capacity (Cp)
     m.Cp_mol = pyo.Expression(expr=sum(m.n[g] * get_g(g, 7) for g in m.G))
     m.Cp_mass = pyo.Expression(expr=m.Cp_mol / m.MW)
 
-    # 7. Density Estimation (kg/m3)
+    # Density Estimation (kg/m3)
     # rho = MW / Vm
     m.Rho = pyo.Expression(expr=m.MW / m.Vm)
 
-    # 8. Scaling
+    # Scaling
     # Scaled = (Val - Min) / (Max - Min)
     m.Z_RED = pyo.Expression(expr=(m.RED - SCALING['RED']['min']) / (SCALING['RED']['max'] - SCALING['RED']['min']))
     m.Z_Cp  = pyo.Expression(expr=(m.Cp_mass - SCALING['Cp']['min']) / (SCALING['Cp']['max'] - SCALING['Cp']['min']))
