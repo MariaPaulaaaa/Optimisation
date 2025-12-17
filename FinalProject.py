@@ -17,7 +17,7 @@ RED_MAX = 1.0    # RED
 # First-order groups, step-wise regression method
 # Source: Hukkerikar (2012) & Rayer (2011)
 GROUP_DATA = {
-    # GROUP             [MW,    Tm,      Tb,      Vm,      Fd,      Fp,       Fh,      Cp_Rayer, Valency]
+    # GROUP             [MW,    Tm,      Tb,      C_Vm,    Fd,      Fp,       Fh,      Cp_Rayer, Valency]
     #                   g/mol   (C_Tm)   (C_Tb)   m3/kmol  MPa^.5   MPa^.5    MPa^.5   J/mol.K   (-)
     'CH3':              [15.03, 0.6699,  0.8853,  0.0241,  7.5697,  1.9996,   2.2105,  43.56,    1], 
     'CH2':              [14.03, 0.2992,  0.5815,  0.0165, -0.0018, -0.1492,  -0.2150,  31.40,    2],
@@ -90,7 +90,7 @@ def create_model(weights, mode):
     m.Cp_mol = pyo.Expression(expr=sum(m.n[g] * get_g(g, 7) for g in m.G))
     m.Cp_mass = pyo.Expression(expr=m.Cp_mol / m.MW)
 
-    # 7. Density (rho)
+    # 7. Density Estimation (kg/m3)
     # rho = MW / Vm
     m.Rho = pyo.Expression(expr=m.MW / m.Vm)
 
