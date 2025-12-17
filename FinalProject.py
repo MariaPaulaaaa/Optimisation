@@ -160,7 +160,6 @@ def solve_scenarios():
         ((0.45, 0.1, 0.45),  'Force_Short',   "CAPEX")
     ]
    
-
     results_list = []
     opt = SolverFactory('gams')
 
@@ -180,7 +179,6 @@ def solve_scenarios():
                 if val > 0: struct += f"{val}{g} "
             
             # Violation Check
-            
             tm_val = pyo.value(model.Tm)
             tb_val = pyo.value(model.Tb)
             red_val = pyo.value(model.RED)
@@ -231,5 +229,4 @@ def solve_scenarios():
     print(df.to_string(index=False))
 
 if __name__ == "__main__":
-
     solve_scenarios()
