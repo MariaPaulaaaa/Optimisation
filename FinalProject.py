@@ -147,7 +147,7 @@ def create_model(weights, mode):
     design_penalty = 500.0 
     
     m.obj = pyo.Objective(expr=
-        w_red*m.Z_RED + w_cp*m.Z_Cp - w_rho*m.Z_Rho + 
+        w_red*m.Z_RED + w_cp*m.Z_Cp + w_rho*m.Z_Rho + 
         penalty*(m.s_Tm + m.s_Tb + m.s_RED) +
         design_penalty*m.s_Design,
         sense=pyo.minimize)
