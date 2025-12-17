@@ -157,7 +157,7 @@ def create_model(weights, mode):
 def solve_scenarios():
     # (RED, Cp, rho), Mode, Description
     scenarios = [
-        (( 1/3,  1/3, 0.33), 'Base',          "Base Case (Equal W)"),
+        ((1/3, 1/3, 1/3), 'Base',          "Base Case (Equal W)"),
         ((0.90, 0.05, 0.05), 'Force_OH',      "Solubility (Force OH)"),
         ((0.05, 0.90, 0.05), 'Force_Long',    "Energy (Force Long)"),
         ((0.10, 0.10, 0.80), 'Force_Short',   "Density (Force Short)"),
