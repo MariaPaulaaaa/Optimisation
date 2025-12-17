@@ -183,46 +183,48 @@ def solve_scenarios():
                 val = int(round(pyo.value(model.n[g])))
                 if val > 0: struct += f"{val}{g} "
             
-            # Check for violations
-            notes = []
-            # Check Melting Point Slack
-            if pyo.value(model.s_Tm) > 0.1: 
-                notes.append(f"Tm High (+{pyo.value(model.s_Tm):.1f}K)")
+            # Violation Check
             
-            # Check Boiling Point Slack
-            if pyo.value(model.s_Tb) > 0.1: 
-                notes.append(f"Tb Low (-{pyo.value(model.s_Tb):.1f}K)")
-            
-            # Check RED Slack
-            if pyo.value(model.s_RED) > 0.1: 
-                notes.append(f"RED High (+{pyo.value(model.s_RED):.2f})")
-            
-            # Check Design Slack
-            if pyo.value(model.s_Design) > 0.1: 
-                notes.append("Design Unmet")
-            
-            # Check Density (Soft Check)
+            tm_val = pyo.value(model.Tm)
+            tb_val = pyo.value(model.Tb)
+            red_val = pyo.value(model.RED)
             rho_val = pyo.value(model.Rho)
+            
+            notes = []
+            if tm_val > T_M_MAX: 
+                notes.append(f"Tm High (+{tm_val - T_M_MAX:.1f}K)")
+            
+            if tb_val < T_B_MIN: 
+                notes.append(f"Tb Low (-{T_B_MIN - tb_val:.1f}K)")
+            
+            if red_val > RED_MAX: 
+                notes.append(f"RED High (+{red_val - RED_MAX:.2f})")
+            
+            # Check Density (Soft Warning)
             if rho_val < 700:
                 notes.append(f"Low Rho ({rho_val:.0f})")
+
+            # Check Design Compliance (Slack check is enough here)
+            if pyo.value(model.s_Design) > 0.1: 
+                notes.append("Design Unmet")
 
             note_str = ", ".join(notes) if notes else "Ok"
 
             results_list.append({
                 'Scenario': i+1,
                 'Structure': struct,
-                'RED': round(pyo.value(model.RED), 2),
+                'RED': round(red_val, 2),
                 'Cp': round(pyo.value(model.Cp_mass), 2),
-                'Tb': round(pyo.value(model.Tb), 1),
-                'Tm': round(pyo.value(model.Tm), 1),
+                'Tb': round(tb_val, 1),
+                'Tm': round(tm_val, 1),
                 'Rho': round(rho_val, 1),
                 'Notes': note_str
             })
-            print(f"    Found: {struct}")
+            print(f"     Found: {struct}")
 
         except Exception as e:
             print(f"    Error: {e}")
-            results_list.append({'Scenario': i+1, 'Structure': 'Solver Crash', 'Notes': 'Check GAMS'})
+            results_list.append({'Scenario': i+1, 'Structure': 'Solver Crash'})
 
     print("\n" + "="*120)
     print("FINAL RESULTS TABLE")
