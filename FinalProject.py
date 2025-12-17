@@ -112,7 +112,7 @@ def create_model(weights, mode):
 
     # Structural Constraints (Hard)
     m.C_Valence = pyo.Constraint(expr=sum(m.n[g] * (2 - get_g(g, 8)) for g in m.G) == 2)
-    m.C_MinSize = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 2)
+    m.C_MinSize = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 3)
 
     # Different weight scenarios (Q3)
     # Forcing modes and relaxed constraints are being added as the solver was getting the same 
@@ -235,4 +235,5 @@ def solve_scenarios():
     print(df.to_string(index=False))
 
 if __name__ == "__main__":
+
     solve_scenarios()
