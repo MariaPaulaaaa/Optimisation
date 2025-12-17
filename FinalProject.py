@@ -50,7 +50,7 @@ def create_model(weights, mode):
     # Initialize=1 prevents starting with all zeros, as log(0) will display an error
     m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 15), initialize=1)
 
-    # SLACK VARIABLES (The key to 100% feasibility)
+    # Slack Varbiales - Used when changing weights
     m.s_Tm = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
     m.s_Tb = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
     m.s_RED = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
@@ -64,7 +64,7 @@ def create_model(weights, mode):
     m.Tm = pyo.Expression(expr=T_M0 * pyo.log(m.Tm_sum))
     m.Tb = pyo.Expression(expr=T_B0 * pyo.log(m.Tb_sum))
 
-    # SAFETY: Ensure log argument is >= 1.1 to avoid negative Kelvin temps
+    # Ensuring log argument is >= 1.1 to avoid negative Kelvin temps
     m.C_LogSafetyTm = pyo.Constraint(expr=m.Tm_sum >= 1.1)
     m.C_LogSafetyTb = pyo.Constraint(expr=m.Tb_sum >= 1.1)
 
@@ -101,24 +101,26 @@ def create_model(weights, mode):
     # Maximize Rho = Minimize (Max - Rho)
     m.Z_Rho = pyo.Expression(expr=(SCALING['Rho']['max'] - m.Rho) / (SCALING['Rho']['max'] - SCALING['Rho']['min']))
 
-    # --- CONSTRAINTS (Softened) ---
+    # Softened Constraints - Used when changing weights
     m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX + m.s_Tm)
     m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN - m.s_Tb)
     
     # Very relaxed RED limit for hard scenarios
     red_limit = 1.0
-    if mode == 'Force_OH': red_limit = 5.0 # OH groups skyrocket RED with these coeffs
+    if mode == 'Force_OH': red_limit = 5.0
     m.C_RED = pyo.Constraint(expr=m.RED <= red_limit + m.s_RED)
 
-    # Structural (Hard)
+    # Structural Constraints (Hard)
     m.C_Valence = pyo.Constraint(expr=sum(m.n[g] * (2 - get_g(g, 8)) for g in m.G) == 2)
     m.C_MinSize = pyo.Constraint(expr=sum(m.n[g] for g in m.G) >= 2)
 
-    # --- SCENARIOS ---
+    # Different weight scenarios (Q3)
+    # Forcing modes and relaxed constraints are being added as the solver was getting the same 
+    # results eventhough weights changed
     if mode == 'Force_OH':
         # Must have OH
         m.C_Design = pyo.Constraint(expr=1 <= m.n['OH (alcohol)'] + m.s_Design)
-        # Relaxed size limit to finding a feasible chain
+        # Relaxed size limit to find a feasible chain
         m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 10)
         
     elif mode == 'Force_Short':
@@ -134,18 +136,18 @@ def create_model(weights, mode):
         m.C_Design = pyo.Constraint(expr=8 <= m.n['CH2'] + m.s_Design)
         m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 15)
         
-    else: # Base
-        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 5)
+    else: # Base Case (no relaxed contraints, must follow the brief)
+        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 7)
         m.C_Design = pyo.Constraint(expr=m.s_Design == 0)
 
-    # --- OBJECTIVE FUNCTION ---
+    # Objective Function
     w_red, w_cp, w_rho = weights
     penalty = 1000.0
     # Lower penalty for design slacks to avoid numerical shock
     design_penalty = 500.0 
     
     m.obj = pyo.Objective(expr=
-        w_red*m.Z_RED + w_cp*m.Z_Cp + w_rho*m.Z_Rho + 
+        w_red*m.Z_RED + w_cp*m.Z_Cp - w_rho*m.Z_Rho + 
         penalty*(m.s_Tm + m.s_Tb + m.s_RED) +
         design_penalty*m.s_Design,
         sense=pyo.minimize)
@@ -153,30 +155,29 @@ def create_model(weights, mode):
     return m
 
 def solve_scenarios():
-    # Scenarios (Weights), Mode, Description
+    # (RED, Cp, rho), Mode, Description
     scenarios = [
-        ((0.33, 0.33, 0.33), 'Base',          "1. Base Case (Equal W)"),
-        ((0.90, 0.05, 0.05), 'Force_OH',      "2. Solubility (Force OH)"),
-        ((0.05, 0.90, 0.05), 'Force_Long',    "3. Energy (Force Long)"),
-        ((0.10, 0.10, 0.80), 'Force_Short',   "4. Density (Force Short)"),
-        ((0.50, 0.50, 0.00), 'Force_Primary', "5. Thermo (Primary Amine)"),
-        ((0.20, 0.60, 0.20), 'Base',          "6. Energy Weighted (Base)")
+        (( 1/3,  1/3, 0.33), 'Base',          "Base Case (Equal W)"),
+        ((0.90, 0.05, 0.05), 'Force_OH',      "Solubility (Force OH)"),
+        ((0.05, 0.90, 0.05), 'Force_Long',    "Energy (Force Long)"),
+        ((0.10, 0.10, 0.80), 'Force_Short',   "Density (Force Short)"),
+        ((0.50, 0.50, 0.00), 'Force_Primary', "Thermo (Primary Amine)"),
+        ((0.20, 0.60, 0.20), 'Base',          "Energy Weighted (Base)")
     ]
     
     results_list = []
     opt = SolverFactory('gams')
 
-    print("\n--- ROBUST MULTI-OBJECTIVE ANALYSIS (v3) ---")
+    print("\nRunning Scenarios")
 
     for i, (w, mode, desc) in enumerate(scenarios):
-        print(f"\n>>> Scenario {i+1}: {desc}")
+        print(f"\nScenario {i+1}: {desc}")
         model = create_model(w, mode)
         
         try:
-            # Using DICOPT with relaxed checks
             res = opt.solve(model, solver='dicopt', tee=False)
             
-            # Even if optimal is not found, try to read values if feasible
+            # Retrieve values regardless of optimal status if feasible
             struct = ""
             for g in model.G:
                 val = int(round(pyo.value(model.n[g])))
@@ -184,9 +185,27 @@ def solve_scenarios():
             
             # Check for violations
             notes = []
-            if pyo.value(model.s_Tb) > 0.1: notes.append(f"Tb low (-{pyo.value(model.s_Tb):.0f}K)")
-            if pyo.value(model.s_RED) > 0.1: notes.append(f"RED high (+{pyo.value(model.s_RED):.1f})")
-            if pyo.value(model.s_Design) > 0.1: notes.append("Design Unmet")
+            # Check Melting Point Slack
+            if pyo.value(model.s_Tm) > 0.1: 
+                notes.append(f"Tm High (+{pyo.value(model.s_Tm):.1f}K)")
+            
+            # Check Boiling Point Slack
+            if pyo.value(model.s_Tb) > 0.1: 
+                notes.append(f"Tb Low (-{pyo.value(model.s_Tb):.1f}K)")
+            
+            # Check RED Slack
+            if pyo.value(model.s_RED) > 0.1: 
+                notes.append(f"RED High (+{pyo.value(model.s_RED):.2f})")
+            
+            # Check Design Slack
+            if pyo.value(model.s_Design) > 0.1: 
+                notes.append("Design Unmet")
+            
+            # Check Density (Soft Check)
+            rho_val = pyo.value(model.Rho)
+            if rho_val < 700:
+                notes.append(f"Low Rho ({rho_val:.0f})")
+
             note_str = ", ".join(notes) if notes else "Ok"
 
             results_list.append({
@@ -195,6 +214,8 @@ def solve_scenarios():
                 'RED': round(pyo.value(model.RED), 2),
                 'Cp': round(pyo.value(model.Cp_mass), 2),
                 'Tb': round(pyo.value(model.Tb), 1),
+                'Tm': round(pyo.value(model.Tm), 1),
+                'Rho': round(rho_val, 1),
                 'Notes': note_str
             })
             print(f"    Found: {struct}")
@@ -203,9 +224,9 @@ def solve_scenarios():
             print(f"    Error: {e}")
             results_list.append({'Scenario': i+1, 'Structure': 'Solver Crash', 'Notes': 'Check GAMS'})
 
-    print("\n" + "="*100)
+    print("\n" + "="*120)
     print("FINAL RESULTS TABLE")
-    print("="*100)
+    print("="*120)
     df = pd.DataFrame(results_list)
     pd.set_option('display.max_columns', None)
     pd.set_option('display.width', 1000)
