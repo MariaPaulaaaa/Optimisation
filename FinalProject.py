@@ -116,7 +116,7 @@ def create_model(weights, mode):
 
     # Different weight scenarios (Q3)
     # Forcing modes and relaxed constraints are being added as the solver was getting the same 
-    # results eventhough weights changed
+    # results even though weights changed
     if mode == 'Force_OH':
         # Must have OH
         m.C_Design = pyo.Constraint(expr=1 <= m.n['OH (alcohol)'] + m.s_Design)
