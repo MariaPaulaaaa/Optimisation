@@ -138,7 +138,7 @@ def create_model(weights, mode):
         m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 5)
         m.C_Design = pyo.Constraint(expr=m.s_Design == 0)
 
-    # --- OBJECTIVE ---
+    # --- OBJECTIVE FUNCTION ---
     w_red, w_cp, w_rho = weights
     penalty = 1000.0
     # Lower penalty for design slacks to avoid numerical shock
@@ -155,7 +155,7 @@ def create_model(weights, mode):
 def solve_scenarios():
     # Scenarios (Weights), Mode, Description
     scenarios = [
-        ((0.34, 0.33, 0.33), 'Base',          "1. Base Case (Equal W)"),
+        ((0.33, 0.33, 0.33), 'Base',          "1. Base Case (Equal W)"),
         ((0.90, 0.05, 0.05), 'Force_OH',      "2. Solubility (Force OH)"),
         ((0.05, 0.90, 0.05), 'Force_Long',    "3. Energy (Force Long)"),
         ((0.10, 0.10, 0.80), 'Force_Short',   "4. Density (Force Short)"),
