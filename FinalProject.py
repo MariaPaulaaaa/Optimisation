@@ -104,6 +104,7 @@ def create_model(weights, mode):
     # Softened Constraints - Used when changing weights
     m.C_Tm = pyo.Constraint(expr=m.Tm <= T_M_MAX + m.s_Tm)
     m.C_Tb = pyo.Constraint(expr=m.Tb >= T_B_MIN - m.s_Tb)
+    m.C_RED = pyo.Constraint(expr=m.RED <= RED_MAX + m.s_RED)
 
     # Structural Constraints (Hard)
     m.C_Valence = pyo.Constraint(expr=sum(m.n[g] * (2 - get_g(g, 8)) for g in m.G) == 2)
