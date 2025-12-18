@@ -21,8 +21,8 @@ GROUP_DATA = {
     #                   g/mol   (C_Tm)   (C_Tb)   m3/kmol  MPa^.5   MPa^.5    MPa^.5   J/mol.K   (-)
     'CH3':              [15.03, 0.6699,  0.8853,  0.0241,  7.5697,  1.9996,   2.2105,  43.56,    1], 
     'CH2':              [14.03, 0.2992,  0.5815,  0.0165, -0.0018, -0.1492,  -0.2150,  31.40,    2],
-    'NH2 (primary)':    [16.02, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,   6.7984,  56.47,    1], # CH2NH2
-    'NH (sec)':         [15.02, 2.0673,  1.3838,  0.0260,  0.2374,  0.1072,   1.4183,  41.05,    2], # CH2NH
+    'NH2 (primary)':    [30.05, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,   6.7984,  87.87,    1], # CH2NH2, MW = 14.03 + 16.02, Cp = 31.40 + 56.47
+    'NH (sec)':         [29.05, 2.0673,  1.3838,  0.0260,  0.2374,  0.1072,   1.4183,  72.45,    2], # CH2NH,  MW = 14.03 + 15.02, Cp = 31.40 + 41.05
     'OH (alcohol)':     [17.01, 3.2702,  2.1385,  0.0044,  8.0236,  4.9598,  11.8005,  55.37,    1]
 }
 GROUPS = list(GROUP_DATA.keys())
@@ -113,7 +113,17 @@ def create_model(weights, mode):
     # Different weight scenarios (Q3)
     # Forcing modes and relaxed constraints are being added as the solver was getting the same 
     # results even though weights changed
-    if mode == 'Force_OH':
+    if mode == 'Base':
+        # Slack variables are forced to 0 so no constraint violation is allowed.
+        m.C_StrictRED = pyo.Constraint(expr=m.s_RED == 0)
+        m.C_StrictTm = pyo.Constraint(expr=m.s_Tm == 0)
+        m.C_StrictTb = pyo.Constraint(expr=m.s_Tb == 0)
+        
+        # Size Limit
+        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 7)
+        m.C_Design = pyo.Constraint(expr=m.s_Design == 0)
+
+    elif mode == 'Force_OH':
         # Must have OH
         m.C_Design = pyo.Constraint(expr=1 <= m.n['OH (alcohol)'] + m.s_Design)
         # Relaxed size limit to find a feasible chain
@@ -131,10 +141,6 @@ def create_model(weights, mode):
     elif mode == 'Force_Long':
         m.C_Design = pyo.Constraint(expr=8 <= m.n['CH2'] + m.s_Design)
         m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 15)
-        
-    else: # Base Case (no relaxed contraints, must follow the brief)
-        m.C_Size = pyo.Constraint(expr=sum(m.n[g] for g in m.G) <= 7)
-        m.C_Design = pyo.Constraint(expr=m.s_Design == 0)
 
     # Objective Function
     w_red, w_cp, w_rho = weights
