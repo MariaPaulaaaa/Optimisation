@@ -17,8 +17,8 @@ RED_MAX = 1.0    # RED
 # First-order groups, step-wise regression method
 # Source: Hukkerikar (2012) & Rayer (2011)
 GROUP_DATA = {
-    # GROUP             [MW,    Tm,      Tb,      Vm,      Fd,      Fp,       Fh,      Cp_Rayer, Valency]
-    #                   g/mol   (C_Tm)   (C_Tb)   m3/kmol  MPa^.5   MPa^.5    MPa^.5   J/mol.K   (-)
+    # GROUP             [MW,    C_Tm,    C_Tb,    C_Vm,    Fd,      Fp,       Fh,      Cp_Rayer, Valency]
+    #                   g/mol   K        K        m3/kmol  MPa^.5   MPa^.5    MPa^.5   J/mol.K   (-)
     'CH3':              [15.03, 0.6699,  0.8853,  0.0241,  7.5697,  1.9996,   2.2105,  43.56,    1], 
     'CH2':              [14.03, 0.2992,  0.5815,  0.0165, -0.0018, -0.1492,  -0.2150,  31.40,    2],
     'NH2 (primary)':    [30.05, 3.4368,  2.3212,  0.0281,  8.1717,  5.2964,   6.7984,  87.87,    1], # CH2NH2, MW = 14.03 + 16.02, Cp = 31.40 + 56.47
@@ -50,13 +50,13 @@ def create_model(weights, mode):
     # Initialize=1 prevents starting with all zeros, as log(0) will display an error
     m.n = pyo.Var(m.G, domain=pyo.NonNegativeIntegers, bounds=(0, 15), initialize=1)
 
-    # Slack Varbiales - Used when changing weights
+    # Slack Variables - Used when changing weights
     m.s_Tm = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
     m.s_Tb = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
     m.s_RED = pyo.Var(domain=pyo.NonNegativeReals, initialize=0)
     m.s_Design = pyo.Var(domain=pyo.NonNegativeReals, initialize=0) # Slack for forced designs
 
-    # 1. Temperatures (Hukkerikar Logarithmic Model)
+    # Temperatures (Hukkerikar Logarithmic Model)
     # Tm = T_m0 * ln( Sum Ni * C_Tmi )
     m.Tm_sum = pyo.Expression(expr=sum(m.n[g] * get_g(g, 1) for g in m.G) + 0.001)
     m.Tb_sum = pyo.Expression(expr=sum(m.n[g] * get_g(g, 2) for g in m.G) + 0.001)
@@ -68,33 +68,33 @@ def create_model(weights, mode):
     m.C_LogSafetyTm = pyo.Constraint(expr=m.Tm_sum >= 1.1)
     m.C_LogSafetyTb = pyo.Constraint(expr=m.Tb_sum >= 1.1)
 
-    # 2. Molar Volume (m3/kmol)
+    # Molar Volume (m3/kmol)
     # Vm = Vm0 + Sum(Ni * Ci)
     m.Vm = pyo.Expression(expr=V_M0 + sum(m.n[g] * get_g(g, 3) for g in m.G))
     
-    # 3. Solubility Parameters (Hansen)
+    # Solubility Parameters (Hansen)
     # d = Sum Ni * Fi
     m.dd = pyo.Expression(expr=sum(m.n[g] * get_g(g, 4) for g in m.G))
     m.dp = pyo.Expression(expr=sum(m.n[g] * get_g(g, 5) for g in m.G))
     m.dh = pyo.Expression(expr=sum(m.n[g] * get_g(g, 6) for g in m.G))
 
-    # 4. RED (Relative Energy Difference)
+    # RED (Relative Energy Difference)
     m.Ra2 = pyo.Expression(expr=4*(m.dd - D_D_CO2)**2 + (m.dp - D_P_CO2)**2 + (m.dh - D_H_CO2)**2)
     m.RED = pyo.Expression(expr=(m.Ra2**0.5) / R0_CO2)
 
-    # 5. Molecular Weight (g/mol or kg/kmol)
+    # Molecular Weight (g/mol or kg/kmol)
     # Adding 1e-6 to avoid division by zero if all n=0
     m.MW = pyo.Expression(expr=sum(m.n[g] * get_g(g, 0) for g in m.G) + 1e-6)
 
-    # 6. Specific Heat Capacity (Cp)
+    # Specific Heat Capacity (Cp)
     m.Cp_mol = pyo.Expression(expr=sum(m.n[g] * get_g(g, 7) for g in m.G))
     m.Cp_mass = pyo.Expression(expr=m.Cp_mol / m.MW)
 
-    # 7. Density (rho)
+    # Density Estimation (kg/m3)
     # rho = MW / Vm
     m.Rho = pyo.Expression(expr=m.MW / m.Vm)
 
-    # 8. Scaling
+    # Scaling
     # Scaled = (Val - Min) / (Max - Min)
     m.Z_RED = pyo.Expression(expr=(m.RED - SCALING['RED']['min']) / (SCALING['RED']['max'] - SCALING['RED']['min']))
     m.Z_Cp  = pyo.Expression(expr=(m.Cp_mass - SCALING['Cp']['min']) / (SCALING['Cp']['max'] - SCALING['Cp']['min']))
