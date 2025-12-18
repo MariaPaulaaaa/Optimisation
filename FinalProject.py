@@ -173,7 +173,7 @@ def solve_scenarios():
     print("\nRunning Scenarios")
 
     for i, (w, mode, desc) in enumerate(scenarios):
-        print(f"\nScenario {i+1}: {desc}")
+        print(f"\nScenario {i}: {desc}")
         model = create_model(w, mode)
         
         try:
@@ -212,7 +212,7 @@ def solve_scenarios():
             note_str = ", ".join(notes) if notes else "Ok"
 
             results_list.append({
-                'Scenario': i+1,
+                'Scenario': i,
                 'Structure': struct,
                 'RED': round(red_val, 2),
                 'Cp': round(pyo.value(model.Cp_mass), 2),
@@ -225,7 +225,7 @@ def solve_scenarios():
 
         except Exception as e:
             print(f"    Error: {e}")
-            results_list.append({'Scenario': i+1, 'Structure': 'Solver Crash'})
+            results_list.append({'Scenario': i, 'Structure': 'Solver Crash'})
 
     print("\n" + "="*120)
     print("FINAL RESULTS")
